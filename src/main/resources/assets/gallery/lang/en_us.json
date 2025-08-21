@@ -1,0 +1,13 @@
+{
+  "itemGroup.gallery": "Gallery",
+  "block.gallery.example_block": "Example Block",
+  "item.gallery.example_item": "Example Item",
+
+  "gallery.configuration.title": "Gallery Configs",
+  "gallery.configuration.section.gallery.common.toml": "Gallery Configs",
+  "gallery.configuration.section.gallery.common.toml.title": "Gallery Configs",
+  "gallery.configuration.items": "Item List",
+  "gallery.configuration.logDirtBlock": "Log Dirt Block",
+  "gallery.configuration.magicNumberIntroduction": "Magic Number Text",
+  "gallery.configuration.magicNumber": "Magic Number"
+}
