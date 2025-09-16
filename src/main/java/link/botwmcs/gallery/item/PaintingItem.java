@@ -1,9 +1,12 @@
 package link.botwmcs.gallery.item;
 
 import link.botwmcs.gallery.entity.PaintingEntity;
-import link.botwmcs.gallery.registration.Entities;
+import link.botwmcs.gallery.registration.EntityRegister;
+import net.conczin.immersive_paintings.entity.ImmersivePaintingEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
@@ -18,52 +21,55 @@ public class PaintingItem extends Item {
         super(new Item.Properties());
     }
 
-    public PaintingItem(Properties properties) {
-        super(properties);
-    }
 
+    /** 可根据需要覆写权限判断（默认沿用 vanilla 行为） */
     protected boolean mayUseItemAt(Player player, Direction side, ItemStack stack, BlockPos pos) {
         return player.mayUseItemAt(pos, side, stack);
     }
 
     protected EntityType<? extends PaintingEntity> getEntityType() {
-        return Entities.PAINTING;
+        return EntityRegister.PAINTING.get();
     }
 
-    public InteractionResult useOn(UseOnContext context) {
-        BlockPos blockPos = context.getClickedPos();
-        Direction direction = context.getClickedFace();
-        BlockPos attachmentPosition = blockPos.relative(direction);
-        Player player = context.getPlayer();
-        ItemStack itemStack = context.getItemInHand();
-        if (player != null && this.mayUseItemAt(player, direction, itemStack, attachmentPosition)) {
-            Level level = context.getLevel();
-            int rotation = 0;
-            if (direction.getAxis().isVertical()) {
-                rotation = Math.floorMod((int)Math.floor((double)(player.getYRot() / 90.0F) + (double)2.5F) * 90, 360);
-            }
+    @Override
+    public InteractionResult useOn(UseOnContext ctx) {
+        BlockPos clicked = ctx.getClickedPos();
+        Direction face = ctx.getClickedFace();
+        BlockPos attachPos = clicked.relative(face);
+        Player player = ctx.getPlayer();
+        ItemStack stack = ctx.getItemInHand();
 
-            PaintingEntity entity = (PaintingEntity)this.getEntityType().create(level);
-            if (entity == null) {
-                return InteractionResult.FAIL;
-            } else {
-                entity.setPos(attachmentPosition);
-                entity.setDirection(direction, rotation);
-                if (entity.survives()) {
-                    if (!level.isClientSide) {
-                        entity.playPlacementSound();
-                        level.gameEvent(player, GameEvent.ENTITY_PLACE, entity.position());
-                        level.addFreshEntity(entity);
-                    }
-
-                    itemStack.shrink(1);
-                    return InteractionResult.sidedSuccess(level.isClientSide);
-                } else {
-                    return InteractionResult.CONSUME;
-                }
-            }
-        } else {
+        if (player == null || !this.mayUseItemAt(player, face, stack, attachPos)) {
             return InteractionResult.FAIL;
         }
+
+        Level level = ctx.getLevel();
+        int rotation = 0;
+        if (face.getAxis().isVertical()) {
+            rotation = Math.floorMod((int)Math.floor((player.getYRot() / 90.0F) + 2.5F) * 90, 360);
+        }
+
+        PaintingEntity entity = this.getEntityType().create(level);
+        if (entity == null) {
+            return InteractionResult.FAIL;
+        }
+
+        entity.setPos(attachPos);
+        entity.setDirection(face, rotation);
+
+        if (!entity.survives()) {
+            return InteractionResult.CONSUME;
+        }
+
+        if (!level.isClientSide) {
+            entity.playPlacementSound();
+            level.gameEvent(player, GameEvent.ENTITY_PLACE, entity.position());
+            level.addFreshEntity(entity);
+        }
+
+        stack.shrink(1);
+        return InteractionResult.sidedSuccess(level.isClientSide);
+
     }
+
 }
