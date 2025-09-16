@@ -5,8 +5,6 @@ import link.botwmcs.gallery.registration.EntityRegister;
 import net.conczin.immersive_paintings.entity.ImmersivePaintingEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.player.Player;
@@ -20,7 +18,6 @@ public class PaintingItem extends Item {
     public PaintingItem() {
         super(new Item.Properties());
     }
-
 
     /** 可根据需要覆写权限判断（默认沿用 vanilla 行为） */
     protected boolean mayUseItemAt(Player player, Direction side, ItemStack stack, BlockPos pos) {

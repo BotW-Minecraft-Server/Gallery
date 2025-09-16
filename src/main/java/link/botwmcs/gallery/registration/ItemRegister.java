@@ -1,6 +1,7 @@
 package link.botwmcs.gallery.registration;
 
 import link.botwmcs.gallery.Gallery;
+import link.botwmcs.gallery.item.PaintingGlowItem;
 import link.botwmcs.gallery.item.PaintingItem;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -13,13 +14,17 @@ import java.util.function.Supplier;
 
 public final class ItemRegister {
     public static final ResourceLocation PAINTING_ITEM_ID = Gallery.locate("painting");
+    public static final ResourceLocation PAINTING_ITEM_GLOW_ID = Gallery.locate("glow_painting");
     public static final ResourceLocation TAB_ID = Gallery.locate("tab");
 
     public static Supplier<Item> PAINTING_ITEM;
+    public static Supplier<Item> GLOW_PAINTING_ITEM;
     public static Supplier<CreativeModeTab> TAB;
 
     public static void registerItems(RegistryHelper<Item> helper) {
         PAINTING_ITEM = helper.register(PAINTING_ITEM_ID, PaintingItem::new);
+        // TODO: Make glow painting item
+        GLOW_PAINTING_ITEM = helper.register(PAINTING_ITEM_GLOW_ID, PaintingGlowItem::new);
     }
 
     public static void registerCreativeTab(RegistryHelper<CreativeModeTab> helper) {
@@ -28,10 +33,11 @@ public final class ItemRegister {
                 .icon(() -> new ItemStack(Objects.requireNonNull(PAINTING_ITEM.get())))
                 .displayItems((params, output) -> {
                     output.accept(new ItemStack(Objects.requireNonNull(PAINTING_ITEM.get())));
+                    output.accept(new ItemStack(Objects.requireNonNull(GLOW_PAINTING_ITEM.get())));
                 })
                 .build());
     }
-    
+
     private ItemRegister() {}
 }
 

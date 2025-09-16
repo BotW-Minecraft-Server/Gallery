@@ -85,6 +85,8 @@ public class PaintingEntity extends HangingEntity {
         return Vec3.atLowerCornerOf(this.pos);
     }
 
+
+
     @Override
     protected AABB calculateBoundingBox(BlockPos pos, Direction side) {
         Vec3 front = Vec3.atLowerCornerOf(side.getNormal());
@@ -157,6 +159,10 @@ public class PaintingEntity extends HangingEntity {
     // ========= 物品/音效 =========
     public Item getItem() {
         return Items.PAINTING;
+    }
+
+    public boolean isGlowing() {
+        return false;
     }
 
     public ItemStack getPickResult() {

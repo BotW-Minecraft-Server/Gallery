@@ -2,8 +2,10 @@ package link.botwmcs.gallery.registration;
 
 import link.botwmcs.gallery.Gallery;
 import link.botwmcs.gallery.entity.PaintingEntity;
+import link.botwmcs.gallery.entity.PaintingEntityGlowing;
 import net.minecraft.network.syncher.EntityDataSerializer;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 
@@ -11,6 +13,7 @@ import java.util.function.Supplier;
 
 public final class EntityRegister {
     private static final ResourceLocation PAINTING_ID = Gallery.locate("painting");
+    private static final ResourceLocation PAINTING_GLOW_ID = Gallery.locate("glow_painting");
 
     // 供 EntityData 同步使用的实例（需要在类加载时可用）
     public static final EntityDataSerializer<ResourceLocation> TRACKED_IDENTIFIER =
@@ -18,6 +21,7 @@ public final class EntityRegister {
 
     // 通过注册返回的 Supplier 取实体类型（避免初始化顺序问题）
     public static Supplier<EntityType<PaintingEntity>> PAINTING;
+    public static Supplier<EntityType<PaintingEntityGlowing>> GLOW_PAINTING;
 
     public static void registerEntitySerializers(RegistryHelper<EntityDataSerializer<?>> helper) {
         // 注册“resource”序列化器；实例沿用上面的静态对象，保证你在 defineId 时可立即拿到
@@ -32,6 +36,15 @@ public final class EntityRegister {
                         .updateInterval(Integer.MAX_VALUE)
                         .fireImmune()
                         .build(PAINTING_ID.toString()));
+
+        GLOW_PAINTING = helper.register(PAINTING_GLOW_ID,
+                () -> EntityType.Builder.<PaintingEntityGlowing>of(PaintingEntityGlowing::new, MobCategory.MISC)
+                        .sized(0.5F, 0.5F)
+                        .clientTrackingRange(10)
+                        .updateInterval(Integer.MAX_VALUE)
+                        .fireImmune()
+                        .build(PAINTING_GLOW_ID.toString()));
+
     }
 
     private EntityRegister() {}

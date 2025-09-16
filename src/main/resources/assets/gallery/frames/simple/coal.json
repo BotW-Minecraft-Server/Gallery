@@ -1,4 +1,4 @@
 {
-  "frame": "immersive_paintings:objects/frame/simple",
-  "material": "immersive_paintings:textures/block/frame/simple/coal.png"
+  "frame": "gallery:objects/frame/simple",
+  "material": "gallery:textures/block/frame/simple/coal.png"
 }

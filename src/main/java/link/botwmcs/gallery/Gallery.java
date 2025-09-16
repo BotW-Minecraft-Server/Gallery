@@ -65,6 +65,7 @@ public class Gallery {
     private void commonSetup(FMLCommonSetupEvent event) {
         // Some common setup code
         LOGGER.info("HELLO FROM COMMON SETUP");
+        Services.initImageSource();
     }
 
 
