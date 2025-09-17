@@ -1,7 +1,8 @@
 {
   "itemGroup.gallery": "Gallery",
   "block.gallery.example_block": "Example Block",
-  "item.gallery.example_item": "Example Item",
+  "item.gallery.painting": "Painting",
+  "item.gallery.glow_painting": "Glowing Painting",
 
   "gallery.configuration.title": "Gallery Configs",
   "gallery.configuration.section.gallery.common.toml": "Gallery Configs",
