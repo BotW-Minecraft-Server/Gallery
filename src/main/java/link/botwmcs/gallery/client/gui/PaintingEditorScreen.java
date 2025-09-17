@@ -78,12 +78,7 @@ public class PaintingEditorScreen extends Screen {
         }).pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
         y += 24;
 
-//        btnUploadNew = FizzyButton.builder(Component.literal("Upload new Image"), b -> {
-//            uploadMode = true;
-//        }).pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
-
         addRenderableWidget(btnUploaded);
-//        addRenderableWidget(btnUploadNew);
 
         // RIGHT PADDING
         int rightX = LEFT_W + PADDING;
@@ -98,7 +93,9 @@ public class PaintingEditorScreen extends Screen {
         int barY  = rightY + gridH + 8;                // 底部工具栏 Y
         int barW  = Math.min(this.width - rightX - PADDING, gridW);
 
-        btnPrev = FizzyButton.builder(Component.literal("<"), b -> {
+        int buttonSpacing2 = 5;
+
+        btnPrev = FizzyButton.builder(Component.literal("←"), b -> {
             if (page > 0) {
                 page--;
                 selectedIndex = -1;
@@ -106,16 +103,16 @@ public class PaintingEditorScreen extends Screen {
             }
         }).pos(rightX, barY).size(20, 20).build();
 
-        btnNext = FizzyButton.builder(Component.literal(">"), b -> {
+        btnNext = FizzyButton.builder(Component.literal("→"), b -> {
             if (page + 1 < pageCount) {
                 page++;
                 selectedIndex = -1;
                 warmupPage();
             }
-        }).pos(rightX + barW - 20, barY).size(20, 20).build();
+        }).pos(btnPrev.getX() + buttonSpacing2 + 20, barY).size(20, 20).build();
 
         btnConfirm = StartButton.builder(Component.literal("Confirm"), b -> onConfirm())
-                .pos(rightX + (barW - 100) / 2, barY).size(80, 20).build();
+                .pos(btnNext.getX() + buttonSpacing2 + 20, barY).size(80, 20).build();
 
         addRenderableWidget(btnPrev);
         addRenderableWidget(btnNext);
@@ -246,25 +243,6 @@ public class PaintingEditorScreen extends Screen {
         int rightY = PADDING + 14;
         int cellW = THUMB, cellH = THUMB;
 
-//        if (uploadMode) {
-//            int gridW  = cols * THUMB_CELL + (cols - 1) * GRID_GAP;
-//            int gridH  = rows * THUMB_CELL + (rows - 1) * GRID_GAP;
-//            int x0 = rightX, y0 = rightY, x1 = rightX + gridW, y1 = rightY + gridH;
-//
-//            // 半透明底 + 边框
-//            g.fill(x0, y0, x1, y1, 0x44000000);
-//            g.renderOutline(x0, y0, gridW, gridH, 0xFFFFFFFF);
-//
-//            // 大字提示
-//            var title = Component.literal("Drag Image Here To Upload");
-//            int tw = this.font.width(title);
-//            g.drawString(this.font, title, x0 + (gridW - tw) / 2, y0 + gridH / 2 - 4, 0xFFFFFF, false);
-//
-//            // 底部按钮仍按原位置绘制（Prev/Confirm/Next）
-//            return; // 不渲染网格
-//        }
-
-
         for (int i = 0; i < rows * cols; i++) {
             int idx = start + i;
             int cx = i % cols;
@@ -305,8 +283,7 @@ public class PaintingEditorScreen extends Screen {
         }
 
         String ps = (page + 1) + " / " + pageCount + "  (" + entries.size() + ")";
-        drawCentered(g, Component.literal(ps),
-                rightX + (this.width - rightX - PADDING)/2, this.height - PADDING - 34, 0xFFFFFF);
+        drawCentered(g, Component.literal(ps), rightX + (this.width - rightX - PADDING)/2, this.height - PADDING - 20, 0xFFFFFF);
 
         // Preview
         if (previewOpen && previewThumb != null && previewStart != null && previewEnd != null) {
