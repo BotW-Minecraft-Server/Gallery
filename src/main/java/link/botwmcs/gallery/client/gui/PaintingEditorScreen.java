@@ -7,9 +7,13 @@ import link.botwmcs.gallery.util.ClientPaintingImages;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import org.lwjgl.glfw.GLFW;
+import org.w3c.dom.css.Rect;
 
+import javax.annotation.Nullable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -21,18 +25,14 @@ import java.util.stream.Collectors;
 
 public class PaintingEditorScreen extends Screen {
     private final int entityId;
-
     // 左侧栏 & 布局
     private static final int LEFT_W = 128;
     private static final int PADDING = 8;
     private static final int THUMB = 64;
     private static final int GRID_GAP = 8;
-
     // 顶部常量与字段
-    private static final int THUMB_CELL = 64;
     private static final int THUMB_TEX  = 1024; // 生成更大的缩略图避免糊
-    private boolean uploadMode = false;        // 拖拽上传模式
-
+    // 线程池
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
     // 资源
     private final Path uploadedDir = Path.of(link.botwmcs.fizzy.Config.IMAGE_LOC.get());
@@ -42,10 +42,22 @@ public class PaintingEditorScreen extends Screen {
     private int page = 0;
     private int pageCount = 1;
     private int selectedIndex = -1; // 当前页内索引
+    private boolean uploadMode = false; // 上传新图模式
     // 控件
     private FizzyButton btnUploaded, btnUploadNew;
     private FizzyButton btnPrev, btnNext;
     private StartButton btnConfirm;
+    // ===== 预览层状态 =====
+    private boolean previewOpen = false;
+    private boolean previewClosing = false;
+    private Path previewPath = null;
+    private ClientPaintingImages.Thumb previewThumb = null;
+    private net.minecraft.client.renderer.Rect2i previewStart = null, previewEnd = null;
+    private long previewAnimStartNanos = 0L;
+    private static final float PREVIEW_DURATION_SEC = 0.22f; // 动画时长
+    private int  lastClickIndex = -1;
+    private long lastClickAtNs  = 0L;
+    private static final long DOUBLE_CLICK_NS = 300_000_000L; // 300ms
 
 
 
@@ -66,12 +78,12 @@ public class PaintingEditorScreen extends Screen {
         }).pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
         y += 24;
 
-        btnUploadNew = FizzyButton.builder(Component.literal("Upload new Image"), b -> {
-            uploadMode = true;
-        }).pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
+//        btnUploadNew = FizzyButton.builder(Component.literal("Upload new Image"), b -> {
+//            uploadMode = true;
+//        }).pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
 
         addRenderableWidget(btnUploaded);
-        addRenderableWidget(btnUploadNew);
+//        addRenderableWidget(btnUploadNew);
 
         // RIGHT PADDING
         int rightX = LEFT_W + PADDING;
@@ -203,6 +215,27 @@ public class PaintingEditorScreen extends Screen {
         // 左栏
         g.fill(PADDING/2, PADDING/2, LEFT_W - PADDING/2, this.height - PADDING/2, 0x66000000);
         drawCentered(g, Component.literal("Gallery"), (LEFT_W)/2, 6, 0xFFFFFF);
+        // 左栏内部可用区域
+        int lx0 = PADDING / 2;
+        int lx1 = LEFT_W - PADDING / 2;
+        int lwidth = lx1 - lx0;
+
+        // 框尺寸与边距
+        int boxMargin = 8;      // 框与左栏边缘的留白
+        int boxH = 40;          // 框高度，可按需调整
+
+        // 贴底放置（距离底部留一点边距）
+        int by1 = this.height - PADDING / 2 - boxMargin; // 底边 y
+        int by0 = by1 - boxH;                             // 顶边 y
+        int bx0 = lx0 + boxMargin;                        // 左边 x
+        int bwidth = lwidth - boxMargin * 2;              // 框宽
+
+        // 仅描边框（白色）
+        g.renderOutline(bx0, by0, bwidth, boxH, 0xFFFFFFFF);
+
+        // 居中文本
+        var hint = Component.literal("Drag to upload");
+        drawCentered(g, hint, LEFT_W / 2, by0 + boxH / 2 - 4, 0xFFFFFF);
 
         // 右侧网格
         int start = page * itemsPerPage();
@@ -213,23 +246,23 @@ public class PaintingEditorScreen extends Screen {
         int rightY = PADDING + 14;
         int cellW = THUMB, cellH = THUMB;
 
-        if (uploadMode) {
-            int gridW  = cols * THUMB_CELL + (cols - 1) * GRID_GAP;
-            int gridH  = rows * THUMB_CELL + (rows - 1) * GRID_GAP;
-            int x0 = rightX, y0 = rightY, x1 = rightX + gridW, y1 = rightY + gridH;
-
-            // 半透明底 + 边框
-            g.fill(x0, y0, x1, y1, 0x44000000);
-            g.renderOutline(x0, y0, gridW, gridH, 0xFFFFFFFF);
-
-            // 大字提示
-            var title = Component.literal("Drag Image Here To Upload");
-            int tw = this.font.width(title);
-            g.drawString(this.font, title, x0 + (gridW - tw) / 2, y0 + gridH / 2 - 4, 0xFFFFFF, false);
-
-            // 底部按钮仍按原位置绘制（Prev/Confirm/Next）
-            return; // 不渲染网格
-        }
+//        if (uploadMode) {
+//            int gridW  = cols * THUMB_CELL + (cols - 1) * GRID_GAP;
+//            int gridH  = rows * THUMB_CELL + (rows - 1) * GRID_GAP;
+//            int x0 = rightX, y0 = rightY, x1 = rightX + gridW, y1 = rightY + gridH;
+//
+//            // 半透明底 + 边框
+//            g.fill(x0, y0, x1, y1, 0x44000000);
+//            g.renderOutline(x0, y0, gridW, gridH, 0xFFFFFFFF);
+//
+//            // 大字提示
+//            var title = Component.literal("Drag Image Here To Upload");
+//            int tw = this.font.width(title);
+//            g.drawString(this.font, title, x0 + (gridW - tw) / 2, y0 + gridH / 2 - 4, 0xFFFFFF, false);
+//
+//            // 底部按钮仍按原位置绘制（Prev/Confirm/Next）
+//            return; // 不渲染网格
+//        }
 
 
         for (int i = 0; i < rows * cols; i++) {
@@ -262,8 +295,9 @@ public class PaintingEditorScreen extends Screen {
             int oy = y + (cellH - drawH) / 2;
 
             // 关键：用 drawW/drawH 作为“目标绘制尺寸”，texW/texH 作为“源纹理尺寸”
-            // g.blit(t.rl(), ox, oy, 0, 0, drawW, drawH, texW, texH);
             g.blit(t.rl(), ox, oy, drawW, drawH, 0, 0, texW, texH, texW, texH);
+            // g.blit(t.rl(), ox, oy, 0, 0, drawW, drawH, texW, texH);
+
 
             if (i == selectedIndex) {
                 g.renderOutline(ox - 2, oy - 2, drawW + 4, drawH + 4, 0xFFFFFFFF);
@@ -274,17 +308,143 @@ public class PaintingEditorScreen extends Screen {
         drawCentered(g, Component.literal(ps),
                 rightX + (this.width - rightX - PADDING)/2, this.height - PADDING - 34, 0xFFFFFF);
 
+        // Preview
+        if (previewOpen && previewThumb != null && previewStart != null && previewEnd != null) {
+            long now = System.nanoTime();
+            float t = (now - previewAnimStartNanos) / 1_000_000_000f;
+            float raw = clamp01(t / PREVIEW_DURATION_SEC);
+            float p = easeInOutCubic(previewClosing ? (1f - raw) : raw);
+
+            int texW = previewThumb.width();
+            int texH = previewThumb.height();
+
+            int cx = lerpI(previewStart.getX(), previewEnd.getX(), p);
+            int cy = lerpI(previewStart.getY(), previewEnd.getY(), p);
+            int cw = lerpI(previewStart.getWidth(),  previewEnd.getWidth(),  p);
+            int ch = lerpI(previewStart.getHeight(), previewEnd.getHeight(), p);
+
+            // 提高 Z：让预览永远在最上层
+            g.pose().pushPose();
+            g.pose().translate(0, 0, 400);
+
+            // 半透明遮罩（越接近打开越深）
+            int alpha = (int)(0xB0 * p) & 0xFF;
+            int mask = (alpha << 24);
+            g.fill(0, 0, this.width, this.height, mask);
+
+            // 用原图尺寸做源大小，目标为动画插值后的 cw/ch
+            int srcW = previewThumb.width(), srcH = previewThumb.height();
+            int windowsW = this.width - 20, windowsH = this.height - 20;
+
+            // —— 6) 关键：blit 的参数顺序
+            // blit(ResourceLocation tex, int x, int y, int u, int v, int width, int height, int texWidth, int texHeight)
+            // width/height = 在屏幕上绘制的尺寸（我们用 drawW/drawH）
+            // texWidth/texHeight = 纹理本身的真实尺寸（我们用 texW/texH）
+
+            g.blit(previewThumb.rl(), cx, cy, cw, ch, 0, 0, texW, texH, texW, texH);
+//            g.blit(previewThumb.rl(), cx, cy, 0, 0, cw, ch, texW, texH);
+            g.renderOutline(cx - 2, cy - 2, cw + 4, ch + 4, 0xFFFFFFFF);
+
+            g.pose().popPose();
+
+            if (raw >= 1f) {
+                if (previewClosing) {
+                    previewOpen = false;
+                    previewClosing = false;
+                    previewPath = null;
+                    previewThumb = null;
+                    previewStart = previewEnd = null;
+                }
+            }
+        }
+
 
 
     }
+
 
     private void drawCentered(GuiGraphics g, Component c, int x, int y, int color) {
         int w = this.font.width(c);
         g.drawString(this.font, c, x - w/2, y, color, false);
     }
 
-    /* ---------------- 输入 ---------------- */
+    // ===== 预览动画相关 =====
+    // t ∈ [0,1]
+    private static float clamp01(float v){ return v < 0 ? 0 : (v > 1 ? 1 : v); }
+    private static float easeInOutCubic(float t){
+        return (t < 0.5f) ? 4f*t*t*t : 1f - (float)Math.pow(-2f*t + 2f, 3)/2f;
+    }
+    private static int lerpI(int a, int b, float t){ return a + Math.round((b - a)*t); }
 
+    private Rect2i computeDrawRectInGrid(int idxInPage) {
+        int rightX = LEFT_W + PADDING;
+        int rightY = PADDING + 14;
+        int cols = itemsPerRow();
+        int cellW = THUMB, cellH = THUMB;
+
+        int cx = idxInPage % cols, cy = idxInPage / cols;
+        int x = rightX + cx * (cellW + GRID_GAP);
+        int y = rightY + cy * (cellH + GRID_GAP);
+
+        int absoluteIdx = page * itemsPerPage() + idxInPage;
+        if (absoluteIdx >= entries.size()) return new Rect2i(x, y, cellW, cellH);
+
+        Path p = entries.get(absoluteIdx);
+        var t = ClientPaintingImages.getCachedThumb(p);
+        if (t == null) return new Rect2i(x, y, cellW, cellH);
+
+        int texW = t.width(), texH = t.height();
+        float s = Math.min(1f, Math.min((float) cellW / texW, (float) cellH / texH));
+        int drawW = Math.max(1, (int)(texW * s));
+        int drawH = Math.max(1, (int)(texH * s));
+        int ox = x + (cellW - drawW) / 2;
+        int oy = y + (cellH - drawH) / 2;
+
+        return new Rect2i(ox, oy, drawW, drawH);
+    }
+
+
+    /** 将图片 w*h 等比缩放到屏幕中央，留 24px 边距 */
+    private Rect2i computeEndRect(int texW, int texH) {
+        int margin = 24;
+        int availW = this.width  - margin*2;
+        int availH = this.height - margin*2;
+        float s = Math.min((float)availW/texW, (float)availH/texH);
+        int dw = Math.max(1, Math.round(texW * s));
+        int dh = Math.max(1, Math.round(texH * s));
+        int dx = (this.width - dw)/2;
+        int dy = (this.height - dh)/2;
+
+        return new Rect2i(dx, dy, dw, dh);
+    }
+
+    private void openPreview(Path file, Rect2i startRect) {
+        boolean wantAnim = isGif(file);
+        ClientPaintingImages.ensureFull(file, wantAnim).thenAccept(t -> {
+            if (minecraft != null) minecraft.execute(() -> openPreviewInternal(file, t, startRect));
+        }).exceptionally(ex -> { Gallery.LOGGER.warn("[Gallery] ensureFull failed: {}", file, ex); return null; });
+
+    }
+
+    private void openPreviewInternal(Path file, ClientPaintingImages.Thumb t, Rect2i startRect) {
+        this.previewPath = file;
+        this.previewThumb = t;
+        this.previewStart = startRect;
+        this.previewEnd   = computeEndRect(t.width(), t.height()); // 关键：按原图尺寸算目标矩形
+        this.previewOpen = true;
+        this.previewClosing = false;
+        this.previewAnimStartNanos = System.nanoTime();
+    }
+
+    private void closePreview() {
+        if (!previewOpen || previewClosing) return;
+        this.previewClosing = true;
+        this.previewAnimStartNanos = System.nanoTime();
+    }
+
+
+
+    /* ---------------- 输入 ---------------- */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int rightX = LEFT_W + PADDING;
@@ -307,12 +467,52 @@ public class PaintingEditorScreen extends Screen {
                 int idxInPage = row * cols + col;
                 int absoluteIdx = page * itemsPerPage() + idxInPage;
                 if (absoluteIdx < entries.size()) {
-                    selectedIndex = idxInPage;
-                    return true;
+                    long now = System.nanoTime();
+                    if (lastClickIndex == absoluteIdx && (now - lastClickAtNs) <= DOUBLE_CLICK_NS) {
+                        // 双击：从实际绘制矩形起放大
+                        Rect2i startRect = computeDrawRectInGrid(idxInPage);
+                        openPreview(entries.get(absoluteIdx), startRect);
+                        // 重置双击状态
+                        lastClickIndex = -1;
+                        return true;
+                    } else {
+                        // 单击：仅选中
+                        selectedIndex = idxInPage;
+                        lastClickIndex = absoluteIdx;
+                        lastClickAtNs = now;
+                        return true;
+                    }
                 }
             }
         }
+
+        if (previewOpen) {
+            // 点到图片之外，也关闭
+            if (previewThumb != null && previewEnd != null) {
+                Rect2i r = previewEnd;
+                if (!(mouseX >= r.getX() && mouseX < r.getX() + r.getWidth()
+                        && mouseY >= r.getY() && mouseY < r.getY() + r.getHeight())) {
+                    closePreview();
+                    return true;
+                }
+            } else {
+                closePreview();
+                return true;
+            }
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (previewOpen) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_SPACE) {
+                closePreview();
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     /* ---------------- 动作 ---------------- */

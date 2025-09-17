@@ -12,6 +12,7 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.List;
@@ -43,8 +44,10 @@ public final class ClientPaintingImages {
     private static final Set<ResourceLocation> IN_FLIGHT = ConcurrentHashMap.newKeySet();
 
     /** 界面用：本地文件 → 缩略图纹理缓存 */
-    public static final ConcurrentMap<Path, Thumb> THUMBS = new ConcurrentHashMap<>();
     public record Thumb(ResourceLocation rl, int width, int height) {}
+
+    public static final ConcurrentMap<Path, Thumb> THUMBS = new ConcurrentHashMap<>();
+    public static final ConcurrentMap<Path, Thumb> FULLS = new ConcurrentHashMap<>();
 
     public static final class ImageMeta {
         public final int pixelW, pixelH;
@@ -176,6 +179,7 @@ public final class ClientPaintingImages {
     }
 
     /* ================= 工具：缩放/转 NativeImage ================= */
+    /* ================= 工具：缩略图与大图 ================= */
 
     private static String hashFrom(ResourceLocation id) {
         String p = id.getPath();
@@ -223,6 +227,7 @@ public final class ClientPaintingImages {
         return ni;
     }
 
+    /** 界面用：取已缓存的缩略图；无则 null。 */
     public static @Nullable Thumb getCachedThumb(Path file) {
         return THUMBS.get(file);
     }
@@ -231,9 +236,7 @@ public final class ClientPaintingImages {
     public static CompletableFuture<Thumb> ensureThumb(Path file, int targetEdge, boolean animateGif) {
         Thumb cached = THUMBS.get(file);
         // 如果已有并且尺寸够且（请求动图时）已有 anim 版本，就直接用
-        if (cached != null
-                && Math.max(cached.width(), cached.height()) >= targetEdge
-                && (!animateGif || cached.rl().getPath().contains("_anim_"))) {
+        if (cached != null && Math.max(cached.width(), cached.height()) >= targetEdge && (!animateGif || cached.rl().getPath().contains("_anim_"))) {
             return CompletableFuture.completedFuture(cached);
         }
 
@@ -308,6 +311,87 @@ public final class ClientPaintingImages {
                     return null;
                 });
     }
+
+    public static CompletableFuture<Thumb> ensureFull(Path file, boolean animateGif) {
+        Thumb cached = FULLS.get(file);
+        if (cached != null && (!animateGif || cached.rl().getPath().contains("_anim_"))) {
+            return CompletableFuture.completedFuture(cached);
+        }
+        return CompletableFuture.supplyAsync(() -> {
+                    try {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(file);
+
+                        if (animateGif && isGif(bytes)) {
+                            GifDecoder.Result r = GifDecoder.decode(bytes);
+                            // 不缩放，保留原分辨率
+                            java.util.List<java.awt.image.BufferedImage> frames = r.frames;
+                            int[] delays = sanitizeDelays(r.delaysMs);
+
+                            // 先在后台把像素转换好（NativeImage 构造仅 CPU）
+                            com.mojang.blaze3d.platform.NativeImage[] nis = new com.mojang.blaze3d.platform.NativeImage[frames.size()];
+                            for (int i = 0; i < frames.size(); i++) {
+                                nis[i] = toNative(frames.get(i));
+                            }
+                            return new Object[]{"GIF", nis, delays};
+                        } else {
+                            java.awt.image.BufferedImage img =
+                                    javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+                            if (img == null) throw new IllegalStateException("Unsupported image: " + file);
+
+                            com.mojang.blaze3d.platform.NativeImage ni = toNative(img);
+                            return new Object[]{"PNG", ni};
+                        }
+                    } catch (Throwable e) {
+                        throw new java.util.concurrent.CompletionException(e);
+                    }
+                }, POOL)
+
+                // ② 主线程：创建纹理对象、setFilter、register
+                .thenCompose(obj -> onMcThread(() -> {
+                    try {
+                        String kind = (String) obj[0];
+                        ResourceLocation rl;
+                        Thumb t;
+
+                        if ("GIF".equals(kind)) {
+                            com.mojang.blaze3d.platform.NativeImage[] nis =
+                                    (com.mojang.blaze3d.platform.NativeImage[]) obj[1];
+                            int[] delays = (int[]) obj[2];
+
+                            rl = Gallery.locate("textures/runtime/full/" + hashThumbKey(file) + "_anim_full");
+                            AnimatedDynamicTexture tex = new AnimatedDynamicTexture(nis, delays, true);
+                            tex.setFilter(false, false); // 禁用 blur/mipmap
+                            Minecraft.getInstance().getTextureManager().register(rl, tex);
+
+                            t = new Thumb(rl, nis[0].getWidth(), nis[0].getHeight());
+                        } else {
+                            com.mojang.blaze3d.platform.NativeImage ni =
+                                    (com.mojang.blaze3d.platform.NativeImage) obj[1];
+
+                            rl = Gallery.locate("textures/runtime/full/" + hashThumbKey(file) + "_full");
+                            net.minecraft.client.renderer.texture.DynamicTexture dyn =
+                                    new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                            dyn.setFilter(false, false);
+                            Minecraft.getInstance().getTextureManager().register(rl, dyn);
+
+                            t = new Thumb(rl, ni.getWidth(), ni.getHeight());
+                        }
+
+                        FULLS.put(file, t);
+                        return t;
+                    } catch (Throwable e) {
+                        throw new RuntimeException(e);
+                    }
+                }))
+
+                // ③ 日志
+                .exceptionally(ex -> {
+                    Gallery.LOGGER.warn("[Gallery] ensureFull failed: {}", file, ex);
+                    return null;
+                });
+
+    }
+
 
     private static int[] sanitizeDelays(int[] in) {
         if (in == null || in.length == 0) return new int[]{100};
