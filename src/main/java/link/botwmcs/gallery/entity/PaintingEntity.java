@@ -1,6 +1,7 @@
 package link.botwmcs.gallery.entity;
 
 import link.botwmcs.gallery.Gallery;
+import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
 import link.botwmcs.gallery.registration.EntityRegister;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -12,6 +13,7 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -23,11 +25,13 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.DiodeBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
 import java.util.function.Predicate;
@@ -149,7 +153,10 @@ public class PaintingEntity extends HangingEntity {
     // ========= 交互：空壳 =========
     @Override
     public InteractionResult interact(Player player, InteractionHand hand) {
-        return InteractionResult.PASS;
+        if (!(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
+        if (sp.gameMode.getGameModeForPlayer() == GameType.ADVENTURE) return InteractionResult.PASS;
+        PacketDistributor.sendToPlayer(sp, new OpenPaintingScreenPayload(this.getId()));
+        return InteractionResult.CONSUME;
     }
 
 

@@ -1,8 +1,6 @@
 package link.botwmcs.gallery;
 
 import link.botwmcs.fizzy.ImageServices;
-import link.botwmcs.fizzy.util.EasyImagesClient;
-import link.botwmcs.gallery.network.ClientPaintingImages;
 import link.botwmcs.gallery.util.FizzyImageSource;
 
 public final class Services {

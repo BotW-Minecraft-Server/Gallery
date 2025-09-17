@@ -1,9 +1,12 @@
 package link.botwmcs.gallery;
 
 
+import link.botwmcs.gallery.client.gui.PaintingEditorScreen;
+import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
 import link.botwmcs.gallery.registration.EntityRegister;
 import link.botwmcs.gallery.registration.ItemRegister;
 import link.botwmcs.gallery.registration.RegistryHelper;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.syncher.EntityDataSerializer;
@@ -13,7 +16,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.level.storage.loot.LootContext;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.*;
 import org.slf4j.Logger;
 
@@ -29,8 +32,6 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
-import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 

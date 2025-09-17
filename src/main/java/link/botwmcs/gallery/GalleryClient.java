@@ -1,5 +1,7 @@
 package link.botwmcs.gallery;
 
+import link.botwmcs.gallery.client.gui.PaintingEditorScreen;
+import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
 import link.botwmcs.gallery.registration.RendererRegister;
 import link.botwmcs.gallery.util.BlenderObjectLoader;
 import link.botwmcs.gallery.util.FrameLoader;
@@ -16,6 +18,7 @@ import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 import java.util.Objects;
 
@@ -42,6 +45,16 @@ public class GalleryClient {
     static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         Objects.requireNonNull(event);
         RendererRegister.register(event::registerEntityRenderer);
+    }
+
+    @SubscribeEvent
+    public static void registerPayloads(RegisterPayloadHandlersEvent e) {
+        var r = e.registrar(Gallery.MODID);
+        r.playToClient(OpenPaintingScreenPayload.TYPE,
+                OpenPaintingScreenPayload.STREAM_CODEC,
+                (payload, ctx) -> ctx.enqueueWork(() ->
+                        Minecraft.getInstance().setScreen(new PaintingEditorScreen(payload.entityId()))
+                ));
     }
 
     @SubscribeEvent

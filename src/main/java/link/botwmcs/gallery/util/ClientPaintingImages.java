@@ -1,24 +1,22 @@
-package link.botwmcs.gallery.network;
+package link.botwmcs.gallery.util;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import link.botwmcs.gallery.Gallery;
 import link.botwmcs.gallery.entity.Painting;
-import link.botwmcs.gallery.util.AnimatedDynamicTexture;
-import link.botwmcs.gallery.util.GifDecoder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 
+import javax.annotation.Nullable;
 import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.nio.file.Path;
 import java.util.EnumMap;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.Set;
+import java.util.concurrent.*;
 
 public final class ClientPaintingImages {
     public interface ImageSource {
@@ -28,9 +26,25 @@ public final class ClientPaintingImages {
         default String ext(ResourceLocation id) { return "png"; }
     }
 
+    private static <T> CompletableFuture<T> onMcThread(java.util.function.Supplier<T> task) {
+        CompletableFuture<T> f = new CompletableFuture<>();
+        net.minecraft.client.Minecraft.getInstance().execute(() -> {
+            try { f.complete(task.get()); } catch (Throwable t) { f.completeExceptionally(t); }
+        });
+        return f;
+    }
+    private static CompletableFuture<Void> onMcThread(Runnable run) {
+        return onMcThread(() -> { run.run(); return null; });
+    }
+
     public static final ConcurrentMap<ResourceLocation, EnumMap<Painting.Size, ResourceLocation>> TEXTURES = new ConcurrentHashMap<>();
     public static final ConcurrentMap<ResourceLocation, ImageMeta> METAS = new ConcurrentHashMap<>();
     private static final ExecutorService POOL = Executors.newFixedThreadPool(2);
+    private static final Set<ResourceLocation> IN_FLIGHT = ConcurrentHashMap.newKeySet();
+
+    /** 界面用：本地文件 → 缩略图纹理缓存 */
+    public static final ConcurrentMap<Path, Thumb> THUMBS = new ConcurrentHashMap<>();
+    public record Thumb(ResourceLocation rl, int width, int height) {}
 
     public static final class ImageMeta {
         public final int pixelW, pixelH;
@@ -52,6 +66,9 @@ public final class ClientPaintingImages {
     /** 触发异步加载/解码/注册纹理。已存在则跳过。 */
     public static void ensureLocalTextures(ResourceLocation id, ImageSource source) {
         if (TEXTURES.containsKey(id)) return;
+        if (id == null || "none".equals(id.getPath()) || source == null) return;
+        if (!IN_FLIGHT.add(id)) return; // 已在加载中
+
         POOL.submit(() -> {
             try {
                 byte[] bytes = source.load(id);
@@ -59,12 +76,16 @@ public final class ClientPaintingImages {
 
                 Decoded decoded = decode(bytes);
                 METAS.put(id, new ImageMeta(decoded.width, decoded.height, decoded.animated));
-
-                EnumMap<Painting.Size, ResourceLocation> out = new EnumMap<>(Painting.Size.class);
-                registerAllSizes(id, decoded, out);
-                TEXTURES.put(id, out);
+                onMcThread(() -> {
+                    EnumMap<Painting.Size, ResourceLocation> out = new EnumMap<>(Painting.Size.class);
+                    registerAllSizes(id, decoded, out);
+                    TEXTURES.put(id, out);
+                });
             } catch (Throwable t) {
                 // 失败时保持使用占位纹理
+                Gallery.LOGGER.warn("[Gallery] ensureLocalTextures failed: {}", id, t);
+            } finally {
+                IN_FLIGHT.remove(id);
             }
         });
     }
@@ -201,6 +222,128 @@ public final class ClientPaintingImages {
         }
         return ni;
     }
+
+    public static @Nullable Thumb getCachedThumb(Path file) {
+        return THUMBS.get(file);
+    }
+
+    /** 异步生成/注册缩略图；已有则直接返回。调用方可 thenAccept 在 UI 刷新。 */
+    public static CompletableFuture<Thumb> ensureThumb(Path file, int targetEdge, boolean animateGif) {
+        Thumb cached = THUMBS.get(file);
+        // 如果已有并且尺寸够且（请求动图时）已有 anim 版本，就直接用
+        if (cached != null
+                && Math.max(cached.width(), cached.height()) >= targetEdge
+                && (!animateGif || cached.rl().getPath().contains("_anim_"))) {
+            return CompletableFuture.completedFuture(cached);
+        }
+
+        return CompletableFuture.supplyAsync(() -> {
+                    try {
+                        byte[] bytes = java.nio.file.Files.readAllBytes(file);
+                        boolean isGif = isGif(bytes);
+
+                        if (animateGif && isGif) {
+                            // GIF：解码帧并缩放到目标边
+                            GifDecoder.Result r = GifDecoder.decode(bytes);
+                            java.util.List<java.awt.image.BufferedImage> scaled = new java.util.ArrayList<>(r.frames.size());
+//                            for (var f : r.frames) scaled.add(scaleToFit(f, targetEdge));
+                            float s = preferHalfThenFit(r.frames.get(0).getWidth(), r.frames.get(0).getHeight(), targetEdge);
+                            for (var f : r.frames) scaled.add(scale(f, s));
+                            return new Object[]{ "GIF", scaled, sanitizeDelays(r.delaysMs) };
+                        } else {
+                            // 静态图：ImageIO 读并缩放
+                            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
+                            if (img == null) throw new IllegalStateException("Unsupported image: " + file);
+                            float s = preferHalfThenFit(img.getWidth(), img.getHeight(), targetEdge);
+                            BufferedImage thumb = scale(img, s);
+//                            java.awt.image.BufferedImage thumb = scaleToFit(img, targetEdge);
+                            return new Object[]{ "PNG", thumb };
+                        }
+                    } catch (Throwable e) {
+                        throw new java.util.concurrent.CompletionException(e);
+                    }
+                }, POOL)
+
+                // ② 渲染线程：构造 DynamicTexture / AnimatedDynamicTexture 并注册
+                .thenCompose(obj -> onMcThread(() -> {
+                    try {
+                        String kind = (String) obj[0];
+                        ResourceLocation rl;
+                        Thumb t;
+
+                        if ("GIF".equals(kind)) {
+                            @SuppressWarnings("unchecked")
+                            List<BufferedImage> frames = (List<BufferedImage>) obj[1];
+                            int[] delays = (int[]) obj[2];
+
+                            // 转 NativeImage[]
+                            NativeImage[] nis = new NativeImage[frames.size()];
+                            for (int i = 0; i < frames.size(); i++) nis[i] = toNative(frames.get(i));
+
+                            rl = Gallery.locate("textures/runtime/thumb/" + hashThumbKey(file) + "_anim_" + targetEdge);
+                            AnimatedDynamicTexture tex = new AnimatedDynamicTexture(nis, delays, true);
+                            tex.setFilter(false, false);
+                            Minecraft.getInstance().getTextureManager().register(rl, tex);
+                            t = new Thumb(rl, frames.get(0).getWidth(), frames.get(0).getHeight());
+                        } else {
+                            BufferedImage thumb = (BufferedImage) obj[1];
+                            NativeImage ni = toNative(thumb);
+                            rl = Gallery.locate("textures/runtime/thumb/" + hashThumbKey(file) + "_" + targetEdge);
+                            DynamicTexture dyn = new DynamicTexture(ni);
+                            dyn.setFilter(false, false); // 这句必须在渲染线程
+                            Minecraft.getInstance().getTextureManager().register(rl, dyn);
+                            t = new Thumb(rl, thumb.getWidth(), thumb.getHeight());
+                        }
+
+                        THUMBS.put(file, t);
+                        return t;
+                    } catch (Throwable e) {
+                        throw new RuntimeException(e);
+                    }
+                }))
+
+                // ③ 异常日志
+                .exceptionally(ex -> {
+                    Gallery.LOGGER.warn("[Gallery] ensureThumb failed: {}", file, ex);
+                    return null;
+                });
+    }
+
+    private static int[] sanitizeDelays(int[] in) {
+        if (in == null || in.length == 0) return new int[]{100};
+        int[] out = new int[in.length];
+        for (int i = 0; i < in.length; i++) out[i] = Math.max(20, in[i]);
+        return out;
+    }
+
+
+    // 工具：把图片按给定最大边缩放（保持等比）
+    private static BufferedImage scaleToFit(BufferedImage src, int maxEdge) {
+        int max = Math.max(src.getWidth(), src.getHeight());
+        float s = max <= maxEdge ? 1.0f : (float) maxEdge / max;
+        return scale(src, s); // 复用你已有的 scale(...)
+    }
+
+    private static float preferHalfThenFit(int srcW, int srcH, int maxEdge) {
+        float half = 0.5f;
+        float halfEdge = Math.max(srcW, srcH) * half;
+        if (halfEdge <= maxEdge) return half;                // 能用 1/2 就用 1/2，最清晰
+        return (float) maxEdge / Math.max(srcW, srcH);       // 否则再缩到不超过上限
+    }
+
+    /** 缩略图 key：路径 + mtime + size，避免同名文件更新后拿到旧图 */
+    private static String hashThumbKey(Path file) throws Exception {
+        long mtime = java.nio.file.Files.getLastModifiedTime(file).toMillis();
+        long size  = java.nio.file.Files.size(file);
+        var md = java.security.MessageDigest.getInstance("SHA-1");
+        md.update(file.toAbsolutePath().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        md.update(java.nio.ByteBuffer.allocate(16).putLong(mtime).putLong(size).array());
+        byte[] d = md.digest();
+        StringBuilder sb = new StringBuilder(d.length * 2);
+        for (byte b : d) sb.append(Character.forDigit((b >>> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+        return sb.toString();
+    }
+
 
     private ClientPaintingImages() {}
 

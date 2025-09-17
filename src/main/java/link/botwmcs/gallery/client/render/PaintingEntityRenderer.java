@@ -7,7 +7,7 @@ import link.botwmcs.gallery.Gallery;
 import link.botwmcs.gallery.Services;
 import link.botwmcs.gallery.entity.Painting;
 import link.botwmcs.gallery.entity.PaintingEntity;
-import link.botwmcs.gallery.network.ClientPaintingImages;
+import link.botwmcs.gallery.util.ClientPaintingImages;
 import link.botwmcs.gallery.util.BlenderObjectLoader;
 import link.botwmcs.gallery.util.oobj.Face;
 import link.botwmcs.gallery.util.oobj.FaceVertex;
@@ -20,9 +20,12 @@ import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 
 import java.util.List;
 
+@OnlyIn(Dist.CLIENT)
 public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRenderer<T> {
     public PaintingEntityRenderer(EntityRendererProvider.Context context) {
         super(context);

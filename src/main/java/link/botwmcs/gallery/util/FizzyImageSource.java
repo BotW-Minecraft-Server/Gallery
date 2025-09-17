@@ -2,7 +2,6 @@ package link.botwmcs.gallery.util;
 
 import link.botwmcs.fizzy.util.EasyImagesClient;
 import link.botwmcs.gallery.Gallery;
-import link.botwmcs.gallery.network.ClientPaintingImages;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 
