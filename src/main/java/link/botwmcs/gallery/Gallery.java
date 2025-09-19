@@ -1,18 +1,21 @@
 package link.botwmcs.gallery;
 
 
-import link.botwmcs.gallery.client.gui.PaintingEditorScreen;
-import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
+import link.botwmcs.gallery.entity.PaintingEntity;
+import link.botwmcs.gallery.network.c2s.SetFramePayload;
+import link.botwmcs.gallery.network.c2s.SetPaintingImagePayload;
 import link.botwmcs.gallery.registration.EntityRegister;
 import link.botwmcs.gallery.registration.ItemRegister;
 import link.botwmcs.gallery.registration.RegistryHelper;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.syncher.EntityDataSerializer;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 
+import net.minecraft.server.commands.ServerPackCommand;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
@@ -46,6 +49,8 @@ public class Gallery {
 
     public Gallery(IEventBus modEventBus, ModContainer modContainer) {
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::registerPayloads);
+
         NeoForge.EVENT_BUS.register(this);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
@@ -66,9 +71,36 @@ public class Gallery {
     private void commonSetup(FMLCommonSetupEvent event) {
         // Some common setup code
         LOGGER.info("HELLO FROM COMMON SETUP");
-        Services.initImageSource();
+        // Services.initImageSource();
     }
 
+    private void registerPayloads(RegisterPayloadHandlersEvent event) {
+        var r = event.registrar(MODID);
+        r.playToServer(SetPaintingImagePayload.TYPE, SetPaintingImagePayload.STREAM_CODEC, (payload, ctx) -> {
+            ctx.enqueueWork(() -> {
+                ServerPlayer serverPlayer = (ServerPlayer) ctx.player();
+                if (serverPlayer == null) return;
+
+                var level = serverPlayer.level();
+                var entity = level.getEntity(payload.entityId());
+                if (!(entity instanceof PaintingEntity pe)) return;
+                pe.setPaint(payload.paintId());
+
+            });
+        });
+
+        r.playToServer(SetFramePayload.TYPE, SetFramePayload.STREAM_CODEC, (payload, ctx) -> {
+            ctx.enqueueWork(() -> {
+                ServerPlayer serverPlayer = (ServerPlayer) ctx.player();
+                if (serverPlayer == null) return;
+
+                var level = serverPlayer.level();
+                var entity = level.getEntity(payload.entityId());
+                if (!(entity instanceof PaintingEntity pe)) return;
+                pe.setFrame(payload.frameId());
+            });
+        });
+    }
 
     // You can use SubscribeEvent and let the Event Bus discover methods to call
     @SubscribeEvent
@@ -77,6 +109,7 @@ public class Gallery {
         LOGGER.info("[Gallery] Loading server...");
 
     }
+
 
     public static ResourceLocation locate(String path) {
         return ResourceLocation.fromNamespaceAndPath(MODID, path);

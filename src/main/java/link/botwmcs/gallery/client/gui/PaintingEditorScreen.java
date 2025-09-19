@@ -44,7 +44,8 @@ public class PaintingEditorScreen extends Screen {
     private int selectedIndex = -1; // 当前页内索引
     private boolean uploadMode = false; // 上传新图模式
     // 控件
-    private FizzyButton btnUploaded, btnUploadNew;
+    private FizzyButton btnUploaded;
+    private FizzyButton btnFrames;
     private FizzyButton btnPrev, btnNext;
     private StartButton btnConfirm;
     // ===== 预览层状态 =====
@@ -424,6 +425,12 @@ public class PaintingEditorScreen extends Screen {
     /* ---------------- 输入 ---------------- */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (previewOpen) {
+            if (!previewClosing) closePreview();
+            return true; // 吃掉事件
+        }
+
+
         int rightX = LEFT_W + PADDING;
         int rightY = PADDING + 14;
         int cols = itemsPerRow();
@@ -463,22 +470,35 @@ public class PaintingEditorScreen extends Screen {
             }
         }
 
-        if (previewOpen) {
-            // 点到图片之外，也关闭
-            if (previewThumb != null && previewEnd != null) {
-                Rect2i r = previewEnd;
-                if (!(mouseX >= r.getX() && mouseX < r.getX() + r.getWidth()
-                        && mouseY >= r.getY() && mouseY < r.getY() + r.getHeight())) {
-                    closePreview();
-                    return true;
-                }
-            } else {
-                closePreview();
-                return true;
-            }
-        }
+//        if (previewOpen) {
+//            // 点到图片之外，也关闭
+//            if (previewThumb != null && previewEnd != null) {
+//                Rect2i r = previewEnd;
+//                if (!(mouseX >= r.getX() && mouseX < r.getX() + r.getWidth()
+//                        && mouseY >= r.getY() && mouseY < r.getY() + r.getHeight())) {
+//                    closePreview();
+//                    return true;
+//                }
+//            } else {
+//                closePreview();
+//                return true;
+//            }
+//        }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        // 预览层打开时，吃掉释放事件，避免下面的控件收到 press/release 配对
+        if (previewOpen) return true;
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (previewOpen) return true;
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override

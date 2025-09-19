@@ -136,7 +136,7 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
     compileOnly files("libs/immersive_paintings-neoforge-1.21.1-0.7.3.jar")
     compileOnly files("libs/Slideshow-fabric-1.21.1-1.0.3-Enhancement-1.jar")
-    implementation files("libs/fizzy-1.2.0.jar")
+    implementation files("libs/fizzy-1.2.1.jar")
 
 
 //    // Image IO

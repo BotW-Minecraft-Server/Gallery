@@ -1,9 +1,11 @@
 package link.botwmcs.gallery;
 
-import link.botwmcs.gallery.client.gui.PaintingEditorScreen;
+import link.botwmcs.fizzy.ImageServices;
+import link.botwmcs.gallery.client.gui.NewPaintingEditorScreen;
 import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
 import link.botwmcs.gallery.registration.RendererRegister;
 import link.botwmcs.gallery.util.BlenderObjectLoader;
+import link.botwmcs.gallery.util.FizzyImageSource;
 import link.botwmcs.gallery.util.FrameLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.packs.resources.ReloadableResourceManager;
@@ -15,7 +17,6 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLConstructModEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
-import net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -27,6 +28,8 @@ import java.util.Objects;
 // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
 @EventBusSubscriber(modid = Gallery.MODID, value = Dist.CLIENT)
 public class GalleryClient {
+    public static FizzyImageSource IMAGE_SOURCE;
+
     public GalleryClient(ModContainer container) {
         // Allows NeoForge to create a config screen for this mod's configs.
         // The config screen is accessed by going to the Mods screen > clicking on your mod > clicking on config.
@@ -39,6 +42,7 @@ public class GalleryClient {
         // Some client setup code
         Gallery.LOGGER.info("HELLO FROM CLIENT SETUP");
         Gallery.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+        Services.initImageSource();
     }
 
     @SubscribeEvent
@@ -53,7 +57,7 @@ public class GalleryClient {
         r.playToClient(OpenPaintingScreenPayload.TYPE,
                 OpenPaintingScreenPayload.STREAM_CODEC,
                 (payload, ctx) -> ctx.enqueueWork(() ->
-                        Minecraft.getInstance().setScreen(new PaintingEditorScreen(payload.entityId()))
+                        Minecraft.getInstance().setScreen(new NewPaintingEditorScreen(payload.entityId()))
                 ));
     }
 

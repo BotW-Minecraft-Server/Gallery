@@ -50,7 +50,6 @@ public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRend
         Minecraft minecraft = Minecraft.getInstance();
         double distance = (double) (minecraft.player == null ? 0.0F : minecraft.player.distanceTo(t));
         double blocksVisible = Math.tan((double)(Integer) minecraft.options.fov().get() / (double)180.0F * Math.PI / (double)2.0F) * (double)2.0F * distance;
-        // TODO: Do Painting job
 
         ClientPaintingImages.ImageMeta meta = ClientPaintingImages.METAS.get(t.getPaint());
         double resolution = 1.0;

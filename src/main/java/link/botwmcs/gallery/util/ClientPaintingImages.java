@@ -232,6 +232,10 @@ public final class ClientPaintingImages {
         return THUMBS.get(file);
     }
 
+    public static @Nullable Thumb getCachedFull(Path file) {
+        return FULLS.get(file);
+    }
+
     /** 异步生成/注册缩略图；已有则直接返回。调用方可 thenAccept 在 UI 刷新。 */
     public static CompletableFuture<Thumb> ensureThumb(Path file, int targetEdge, boolean animateGif) {
         Thumb cached = THUMBS.get(file);
