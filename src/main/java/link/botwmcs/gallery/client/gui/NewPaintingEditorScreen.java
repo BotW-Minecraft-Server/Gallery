@@ -3,15 +3,16 @@ package link.botwmcs.gallery.client.gui;
 import link.botwmcs.fizzy.ImageServices;
 import link.botwmcs.fizzy.client.elements.FizzyButton;
 import link.botwmcs.fizzy.client.elements.StartButton;
-import link.botwmcs.fizzy.util.EasyImagesClient;
 import link.botwmcs.gallery.Gallery;
 import link.botwmcs.gallery.network.c2s.SetFramePayload;
 import link.botwmcs.gallery.network.c2s.SetMaterialPayload;
 import link.botwmcs.gallery.network.c2s.SetPaintingImagePayload;
+import link.botwmcs.gallery.network.c2s.SetPaintingSizePayload;
 import link.botwmcs.gallery.util.ClientPaintingImages;
 import link.botwmcs.gallery.util.FizzyImageSource;
 import link.botwmcs.gallery.util.FrameLoader;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
@@ -27,7 +28,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
@@ -49,7 +49,7 @@ public class NewPaintingEditorScreen extends Screen {
 
 
     /* -------- 页面枚举 -------- */
-    private enum Page { UPLOADED, FRAMES }
+    private enum Page { UPLOADED, FRAMES, EDIT }
     private Page page = Page.UPLOADED;
 
     /* -------- 图片页数据 -------- */
@@ -68,14 +68,34 @@ public class NewPaintingEditorScreen extends Screen {
     private static final ResourceLocation FRAME_SIMPLE = Gallery.locate("objects/frame/simple"); // = gallery:objects/frame/simple
     private static final ResourceLocation MAT_NONE     = Gallery.locate("textures/block/frame/none/none.png");
 
+    /* -------- EDIT 页状态/控件 -------- */
+    private int editWidth  = 1;        // 默认值：你可改成服务器默认
+    private int editHeight = 1;
+    private boolean aspectLocked = true;
+    private boolean showRatioLocked = true;
+    private float aspectBase = 1f;      // 锁定时使用的基准 w/h
+
+    private FizzyButton btnAspect;      // 比例锁开关
+    private FizzyButton btnShowRatio;   // 是否自动适配比例
+    private EditBox widthBox, heightBox; // 数值输入
+    private FizzyButton wMinus, wPlus, hMinus, hPlus; // 快捷微调
+    private boolean suppressEditEvents = false;
+
+    @Nullable private ClientPaintingImages.Thumb editPreviewThumb = null; // 预览图（仅 Edit 页使用）
+
+
     /* -------- 通用分页 -------- */
     private int pageIndex = 0;
-    private int pageCount = 1;
+    private int pageCount = 2;
 
     /* -------- 控件 -------- */
-    private FizzyButton btnUploaded, btnFrames;
+    private FizzyButton btnUploaded, btnFrames, btnEdit;
     private FizzyButton btnPrev, btnNext;
     private StartButton btnConfirm;
+    private List<FizzyButton> ratioButtons = null; // Edit 页的比例快捷按钮
+    private static final int[][] QUICK_RATIOS = new int[][] {
+            {1,1}, {2, 1}, {4,3}, {3,2}, {16,9}, {21,9}
+    };
 
     /* -------- 预览层（仅图片页使用） -------- */
     private boolean previewOpen = false, previewClosing = false;
@@ -109,8 +129,13 @@ public class NewPaintingEditorScreen extends Screen {
                 .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
         y += 24;
 
+        // 左侧：Edit 页（暂未启用）
+        btnEdit = FizzyButton.builder(Component.literal("Edit"), b -> setPage(Page.EDIT))
+                .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
+
         addRenderableWidget(btnUploaded);
         addRenderableWidget(btnFrames);
+        addRenderableWidget(btnEdit);
 
         // 右侧底部翻页/确认
         var right = rightArea();
@@ -138,18 +163,35 @@ public class NewPaintingEditorScreen extends Screen {
         // 关预览
         closePreviewImmediately();
 
+        if (page == Page.EDIT) {
+            clearEditWidgets();
+        }
+
+        resetFocusState();
+
         // 按钮状态
         if (btnUploaded != null) btnUploaded.active = (p != Page.UPLOADED);
         if (btnFrames   != null) btnFrames.active   = (p != Page.FRAMES);
+        if (btnEdit     != null) btnEdit.active     = (p != Page.EDIT);
 
         selectedImgIndex = -1; selectedMaterial = -1;
-        pageIndex = 0; pageCount = 1;
+        pageIndex = 0; pageCount = 2;
 
         if (p == Page.UPLOADED) {
             this.page = Page.UPLOADED;
+            if (btnPrev != null) { btnPrev.visible = true; btnPrev.active = true; }
+            if (btnNext != null) { btnNext.visible = true; btnNext.active = true; }
             refreshUploaded();                  // 这里会异步收集并 warmup 缩略图
-        } else {
+        } else if (p == Page.FRAMES) {
+            this.page = Page.FRAMES;
+            if (btnPrev != null) { btnPrev.visible = true; btnPrev.active = true; }
+            if (btnNext != null) { btnNext.visible = true; btnNext.active = true; }
             refreshFrames();
+        } else {
+            this.page = Page.EDIT;
+            if (btnPrev != null) { btnPrev.visible = false; btnPrev.active = false; }
+            if (btnNext != null) { btnNext.visible = false; btnNext.active = false; }
+            refreshEdit();
         }
     }
 
@@ -164,6 +206,7 @@ public class NewPaintingEditorScreen extends Screen {
 
     /* ---------------- 已上传（图片页） ---------------- */
     private void refreshUploaded() {
+        resetFocusState();
         pageIndex = 0; selectedImgIndex = -1;
         POOL.submit(() -> {
             try {
@@ -214,8 +257,286 @@ public class NewPaintingEditorScreen extends Screen {
         }
     }
 
+    /* ---------------- Edit 页 ---------------- */
+    private void refreshEdit() {
+        page = Page.EDIT;
+
+        clearEditWidgets(); // 保险：无论何时进入先清
+        resetFocusState();
+
+        // 初始化基准比例——优先用当前数值，保证切页来回不丢
+        if (editHeight <= 0) editHeight = 1;
+        aspectBase = Math.max(0.0001f, editWidth / (float) editHeight);
+
+        // 页脚和分页对 EDIT 无意义，禁用翻页按钮
+        updatePagination(1);
+        if (btnPrev != null) btnPrev.active = false;
+        if (btnNext != null) btnNext.active = false;
+
+        buildEditWidgets();
+
+        if (this.minecraft != null && widthBox != null) {
+            this.setInitialFocus(widthBox);
+        }
+    }
+
+    private void setEditPreviewImage(Path file) {
+        // 先试缓存；没有就异步生成（不会卡主线程）
+        ClientPaintingImages.Thumb t = ClientPaintingImages.getCachedThumb(file);
+        if (t != null) {
+            this.editPreviewThumb = t;
+            return;
+        }
+        boolean wantAnim = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".gif");
+        ClientPaintingImages.ensureThumb(file, THUMB_TEX, wantAnim)
+                .thenAccept(thumb -> {
+                    if (this.minecraft != null) this.minecraft.execute(() -> this.editPreviewThumb = thumb);
+                })
+                .exceptionally(ex -> { Gallery.LOGGER.warn("[Gallery] setEditPreviewImage failed: {}", file, ex); return null; });
+    }
+
+
+    private void buildEditWidgets() {
+        // 先把旧控件移除（避免重复添加）
+        this.children().remove(widthBox);
+        this.children().remove(heightBox);
+        this.renderables.remove(widthBox);
+        this.renderables.remove(heightBox);
+        this.renderables.remove(wMinus);
+        this.renderables.remove(wPlus);
+        this.renderables.remove(hMinus);
+        this.renderables.remove(hPlus);
+        this.renderables.remove(btnAspect);
+
+        var right = rightArea();
+        int x = right.x;
+        int y = right.y;
+
+        // 标题
+        // 这里不需要单独控件，render 时画字即可
+
+        // 宽度输入
+        widthBox = new EditBox(this.font, x, y + 18, 80, 20, Component.literal("Width"));
+        widthBox.setMaxLength(5);
+        widthBox.setFilter(s -> s.isEmpty() || s.chars().allMatch(Character::isDigit));
+        widthBox.setValue(Integer.toString(editWidth));
+        widthBox.setResponder(val -> onWidthEdited(val));
+        this.addRenderableWidget(widthBox);
+
+        // 高度输入
+        heightBox = new EditBox(this.font, x + 120, y + 18, 80, 20, Component.literal("Height"));
+        heightBox.setMaxLength(5);
+        heightBox.setFilter(s -> s.isEmpty() || s.chars().allMatch(Character::isDigit));
+        heightBox.setValue(Integer.toString(editHeight));
+        heightBox.setResponder(val -> onHeightEdited(val));
+        this.addRenderableWidget(heightBox);
+
+        // 宽度微调 - / +
+        wMinus = FizzyButton.builder(Component.literal("–"), b -> applyDelta(true, -1))
+                .pos(x + 82, y + 18).size(18, 20).build();
+        wPlus  = FizzyButton.builder(Component.literal("+"),  b -> applyDelta(true, +1))
+                .pos(x + 102, y + 18).size(18, 20).build();
+        this.addRenderableWidget(wMinus);
+        this.addRenderableWidget(wPlus);
+
+        // 高度微调 - / +
+        hMinus = FizzyButton.builder(Component.literal("–"), b -> applyDelta(false, -1))
+                .pos(x + 202, y + 18).size(18, 20).build();
+        hPlus  = FizzyButton.builder(Component.literal("+"),  b -> applyDelta(false, +1))
+                .pos(x + 222, y + 18).size(18, 20).build();
+        this.addRenderableWidget(hMinus);
+        this.addRenderableWidget(hPlus);
+
+        // 比例锁
+        btnAspect = FizzyButton.builder(Component.literal(aspectLocked ? "Lock Ratio" : "Free Ratio"),
+                        b -> toggleAspectLock())
+                .pos(x, y + 46).size(118, 20).build();
+        this.addRenderableWidget(btnAspect);
+
+        btnShowRatio = FizzyButton.builder(Component.literal(showRatioLocked ? "Auto Mode" : "Free Mode"),
+                b -> {
+                })
+                .pos(x, y + 46 + 118 + 6).size(118, 20).build();
+        this.addRenderableWidget(btnShowRatio);
+
+        // 比例快捷按钮：放到“下一行”，并按行宽自动换行
+        int bw = 56, bh = 20, gap = 6;
+        int rx = x;
+        int ry = y + 46 + 24;   // ← 比例锁的下一行
+        int rowRight = right.x + right.gridW;
+
+        ratioButtons = new java.util.ArrayList<>();
+        for (int[] r : QUICK_RATIOS) {
+            String label = r[0] + ":" + r[1];
+
+            // 如果即将超出行宽，就换行
+            if (rx + bw > rowRight) {
+                rx = x;
+                ry += bh + gap;
+            }
+
+            FizzyButton rb = FizzyButton.builder(Component.literal(label), b -> applyRatio(r[0], r[1]))
+                    .pos(rx, ry).size(bw, bh).build();
+            this.addRenderableWidget(rb);
+            ratioButtons.add(rb);
+            rx += bw + gap;
+        }
+
+    }
+
+    private void clearEditWidgets() {
+        // 统一从 children/renderables 里移除，并置空引用，避免叠加与吃事件
+        if (widthBox != null)  { this.removeWidget(widthBox);  widthBox = null; }
+        if (heightBox != null) { this.removeWidget(heightBox); heightBox = null; }
+        if (wMinus != null)    { this.removeWidget(wMinus);    wMinus = null; }
+        if (wPlus  != null)    { this.removeWidget(wPlus);     wPlus  = null; }
+        if (hMinus != null)    { this.removeWidget(hMinus);    hMinus = null; }
+        if (hPlus  != null)    { this.removeWidget(hPlus);     hPlus  = null; }
+        if (btnAspect != null) { this.removeWidget(btnAspect); btnAspect = null; }
+        // 下面第 3 点里要新增的“比例快捷按钮”也记得在这里清掉（见下文 ratioButtons）
+        if (ratioButtons != null) {
+            for (var b : ratioButtons) this.removeWidget(b);
+            ratioButtons = null;
+        }
+    }
+
+    private int editControlsBottomY() {
+        var right = rightArea();
+        int bottom = right.y + 80; // 兜底：老位置（没有控件时也能工作）
+        // 输入框、微调键
+        if (widthBox != null)  bottom = Math.max(bottom,  widthBox.getY()  + widthBox.getHeight());
+        if (heightBox != null) bottom = Math.max(bottom, heightBox.getY() + heightBox.getHeight());
+        if (wMinus != null)    bottom = Math.max(bottom,  wMinus.getY()    + wMinus.getHeight());
+        if (wPlus  != null)    bottom = Math.max(bottom,  wPlus.getY()     + wPlus.getHeight());
+        if (hMinus != null)    bottom = Math.max(bottom,  hMinus.getY()    + hMinus.getHeight());
+        if (hPlus  != null)    bottom = Math.max(bottom,  hPlus.getY()     + hPlus.getHeight());
+        if (btnAspect != null) bottom = Math.max(bottom,  btnAspect.getY() + btnAspect.getHeight());
+        // 比例快捷按钮
+        if (ratioButtons != null) {
+            for (var b : ratioButtons) {
+                if (b != null) bottom = Math.max(bottom, b.getY() + b.getHeight());
+            }
+        }
+        return bottom;
+    }
+
+    private void applyRatio(int rw, int rh) {
+        // 启用锁定，并设置新的基准比例
+        aspectLocked = true;
+        aspectBase = Math.max(0.0001f, rw / (float) rh);
+        if (btnAspect != null) btnAspect.setMessage(Component.literal("Lock Ratio"));
+
+        // 以当前宽度推导高度（避免尺寸突然“跳宽跳高”）
+        editHeight = Math.max(1, Math.round(editWidth / aspectBase));
+        syncBoxesOnlyHeight();  // 只更新高度框，避免触发递归
+    }
+
+    private void resetFocusState() {
+        // 清除 Screen 层面的 focused/dragging，避免指向已移除的控件
+        this.setFocused(null);
+        this.setDragging(false);
+    }
+
+    private void toggleAspectLock() {
+        aspectLocked = !aspectLocked;
+        // 打开锁时以当前数值重置基准
+        if (aspectLocked) {
+            if (editHeight <= 0) editHeight = 1;
+            aspectBase = Math.max(0.0001f, editWidth / (float) editHeight);
+        }
+        if (btnAspect != null) {
+            btnAspect.setMessage(Component.literal(aspectLocked ? "Lock Ratio" : "Free Ratio"));
+        }
+    }
+
+    private void applyDelta(boolean isWidth, int d) {
+        if (isWidth) {
+            editWidth = clampSize(editWidth + d);
+            if (aspectLocked) {
+                editHeight = Math.max(1, Math.round(editWidth / aspectBase));
+            }
+        } else {
+            editHeight = clampSize(editHeight + d);
+            if (aspectLocked) {
+                editWidth = Math.max(1, Math.round(editHeight * aspectBase));
+            }
+        }
+        syncBoxesBoth();
+    }
+
+    private void onWidthEdited(String s) {
+        if (suppressEditEvents) return;           // ← 防递归
+        int w = parseIntOr(editWidth, s);
+        if (w <= 0) return;
+        editWidth = clampSize(w);
+        if (aspectLocked) {
+            editHeight = Math.max(1, Math.round(editWidth / aspectBase));
+            syncBoxesOnlyHeight();                // ← 只更新另一个框
+        }
+        // 若未锁定比例，不需要回写任何框（用户输入已经在框里）
+    }
+
+    private void onHeightEdited(String s) {
+        if (suppressEditEvents) return;           // ← 防递归
+        int h = parseIntOr(editHeight, s);
+        if (h <= 0) return;
+        editHeight = clampSize(h);
+        if (aspectLocked) {
+            editWidth = Math.max(1, Math.round(editHeight * aspectBase));
+            syncBoxesOnlyWidth();                 // ← 只更新另一个框
+        }
+    }
+
+    private void syncBoxesOnlyWidth() {
+        if (widthBox == null) return;
+        String nv = Integer.toString(editWidth);
+        if (nv.equals(widthBox.getValue())) return;   // 值相同就别触发 setValue
+        suppressEditEvents = true;
+        try { widthBox.setValue(nv); }
+        finally { suppressEditEvents = false; }
+    }
+
+    private void syncBoxesOnlyHeight() {
+        if (heightBox == null) return;
+        String nv = Integer.toString(editHeight);
+        if (nv.equals(heightBox.getValue())) return;
+        suppressEditEvents = true;
+        try { heightBox.setValue(nv); }
+        finally { suppressEditEvents = false; }
+    }
+
+    // 若你确实有场景需要两个都更新，再提供一个安全方法：
+    private void syncBoxesBoth() {
+        suppressEditEvents = true;
+        try {
+            if (widthBox != null) {
+                String nw = Integer.toString(editWidth);
+                if (!nw.equals(widthBox.getValue())) widthBox.setValue(nw);
+            }
+            if (heightBox != null) {
+                String nh = Integer.toString(editHeight);
+                if (!nh.equals(heightBox.getValue())) heightBox.setValue(nh);
+            }
+        } finally {
+            suppressEditEvents = false;
+        }
+    }
+
+    private static int parseIntOr(int fallback, String s) {
+        if (s == null || s.isBlank()) return fallback;
+        try { return Integer.parseInt(s); } catch (Exception e) { return fallback; }
+    }
+
+    private static int clampSize(int v) {
+        // 你可以按服务器限制改这里的上下限
+        return Math.max(1, Math.min(128, v));
+    }
+
+
+
     /* ---------------- 框架（Frames页） ---------------- */
     private void refreshFrames() {
+        resetFocusState();
         frameToMaterials.clear();
         materialToFrame.clear();
         materialGui.clear();
@@ -312,12 +633,24 @@ public class NewPaintingEditorScreen extends Screen {
         switch (page) {
             case UPLOADED -> renderUploadedGrid(g);
             case FRAMES   -> renderFramesGrid(g);
+            case EDIT     -> renderEditGrid(g);
         }
 
         // 页脚页码
-        var right = rightArea();
-        String ps = (pageIndex + 1) + " / " + pageCount + (page == Page.UPLOADED ? ("  (" + imgEntries.size() + ")") : ("  (" + materials.size() + ")"));
-        drawCentered(g, Component.literal(ps), right.x + (this.width - right.x - PADDING)/2, this.height - PADDING - 34, 0xFFFFFF);
+        if (page != Page.EDIT) {
+            var right = rightArea();
+            String ps = (pageIndex + 1) + " / " + pageCount +
+                    (page == Page.UPLOADED ? ("  (" + imgEntries.size() + ")")
+                            : ("  (" + materials.size() + ")"));
+            drawCentered(g, Component.literal(ps),
+                    right.x + (this.width - right.x - PADDING)/2,
+                    this.height - PADDING - 34,
+                    0xFFFFFF);
+        }
+
+//        var right = rightArea();
+//        String ps = (pageIndex + 1) + " / " + pageCount + (page == Page.UPLOADED ? ("  (" + imgEntries.size() + ")") : ("  (" + materials.size() + ")"));
+//        drawCentered(g, Component.literal(ps), right.x + (this.width - right.x - PADDING)/2, this.height - PADDING - 34, 0xFFFFFF);
 
         // 预览层（仅图片页）
         if (page == Page.UPLOADED) renderPreviewLayer(g);
@@ -392,6 +725,68 @@ public class NewPaintingEditorScreen extends Screen {
         }
 
     }
+
+    private void renderEditGrid(GuiGraphics g) {
+        var right = rightArea();
+        int x = right.x;
+        int y = right.y;
+
+        // 标题
+//        g.drawString(this.font, "Edit Size", x, y - 10, 0xFFFFFF, false);
+        g.drawString(this.font, "Width",  x, y + 6, 0xFFFFFF, false);
+        g.drawString(this.font, "Height", x + 120, y + 6, 0xFFFFFF, false);
+
+        // 右侧给个大致预览框（按比例缩放）
+        int controlsBottom = editControlsBottomY();
+        int gap = 10; // 与控件的间距
+        int pvX = x;
+        int pvY = Math.max(y + 80, controlsBottom + gap);
+
+        // 可用高度：网格内剩余空间
+        int reservedFooter = 34 + 6; // 页脚数值 + 一点缓冲
+        int maxH = Math.max(60, right.gridH - (pvY - y) - reservedFooter);
+        int pvW = Math.min(right.gridW, 300);
+        int pvH = Math.min(maxH, 180);
+
+        // 背板
+        g.fill(pvX, pvY, pvX + pvW, pvY + pvH, 0x22000000);
+
+        // 计算映射尺寸
+        float scale = Math.min(pvW / (float)editWidth, pvH / (float)editHeight);
+        int dw = Math.max(1, Math.round(editWidth  * scale));
+        int dh = Math.max(1, Math.round(editHeight * scale));
+        int dx = pvX + (pvW - dw)/2;
+        int dy = pvY + (pvH - dh)/2;
+
+        if (editPreviewThumb != null) {
+            int texW = editPreviewThumb.width();
+            int texH = editPreviewThumb.height();
+            // 再做一次“把图像塞进目标矩形”的缩放（与尺寸框对齐）
+            float sImg = Math.min(dw / (float)texW, dh / (float)texH);
+            int iw = Math.max(1, Math.round(texW * sImg));
+            int ih = Math.max(1, Math.round(texH * sImg));
+            int ix = dx + (dw - iw)/2;
+            int iy = dy + (dh - ih)/2;
+
+            g.fill(dx, dy, dx + dw, dy + dh, 0xFF222222); // 背底
+            g.blit(editPreviewThumb.rl(), ix, iy, iw, ih, 0, 0, texW, texH, texW, texH);
+            g.renderOutline(dx - 1, dy - 1, dw + 2, dh + 2, 0xFFFFFFFF);
+        } else {
+            // 无图像时的占位
+            g.fill(dx, dy, dx + dw, dy + dh, 0xFF444444);
+            g.renderOutline(dx - 1, dy - 1, dw + 2, dh + 2, 0xFFFFFFFF);
+        }
+
+
+//        g.fill(dx, dy, dx + dw, dy + dh, 0xFF444444);
+//        g.renderOutline(dx - 1, dy - 1, dw + 2, dh + 2, 0xFFFFFFFF);
+
+        // 页脚显示当前数值和比例
+        String ps = editWidth + " x " + editHeight + "   (ratio " + String.format(java.util.Locale.US, "%.3f", editWidth/(float)editHeight) + ")";
+        g.drawString(this.font, ps, x, y - 6, 0xFFFFFF, false);
+        // drawCentered(g, Component.literal(ps), x, y, 0xFFFFFF);
+    }
+
 
     /* ---------------- 预览层（与之前一致，仅在图片页） ---------------- */
     private void renderPreviewLayer(GuiGraphics g) {
@@ -478,48 +873,50 @@ public class NewPaintingEditorScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         // 预览层打开：吃掉点击并关闭
         if (previewOpen) { closePreview(); return true; }
+        if (page == Page.UPLOADED || page == Page.FRAMES) {
+            var right = rightArea();
+            int cellW = THUMB, cellH = THUMB;
 
-        var right = rightArea();
-        int cellW = THUMB, cellH = THUMB;
+            // 是否点在网格区域
+            boolean inGrid = mouseX >= right.x && mouseY >= right.y &&
+                    mouseX < this.width - PADDING &&
+                    mouseY < this.height - PADDING - 28;
 
-        // 是否点在网格区域
-        boolean inGrid = mouseX >= right.x && mouseY >= right.y &&
-                mouseX < this.width - PADDING &&
-                mouseY < this.height - PADDING - 28;
+            if (inGrid) {
+                int gx = (int)(mouseX - right.x);
+                int gy = (int)(mouseY - right.y);
+                int col = gx / (cellW + GRID_GAP);
+                int row = gy / (cellH + GRID_GAP);
+                if (col >= 0 && col < right.cols && row >= 0 && row < right.rows) {
+                    int idxInPage = row * right.cols + col;
 
-        if (inGrid) {
-            int gx = (int)(mouseX - right.x);
-            int gy = (int)(mouseY - right.y);
-            int col = gx / (cellW + GRID_GAP);
-            int row = gy / (cellH + GRID_GAP);
-            if (col >= 0 && col < right.cols && row >= 0 && row < right.rows) {
-                int idxInPage = row * right.cols + col;
-
-                if (page == Page.UPLOADED) {
-                    int absoluteIdx = pageIndex * itemsPerPage() + idxInPage;
-                    if (absoluteIdx < imgEntries.size()) {
-                        long now = System.nanoTime();
-                        if (lastClickIndex == absoluteIdx && (now - lastClickAtNs) <= DOUBLE_CLICK_NS) {
-                            // 双击：从图片矩形开始放大
-                            openPreview(imgEntries.get(absoluteIdx), computeDrawRectInGrid(idxInPage));
-                            lastClickIndex = -1;
-                            return true;
-                        } else {
-                            selectedImgIndex = idxInPage;
-                            lastClickIndex = absoluteIdx;
-                            lastClickAtNs = now;
+                    if (page == Page.UPLOADED) {
+                        int absoluteIdx = pageIndex * itemsPerPage() + idxInPage;
+                        if (absoluteIdx < imgEntries.size()) {
+                            long now = System.nanoTime();
+                            if (lastClickIndex == absoluteIdx && (now - lastClickAtNs) <= DOUBLE_CLICK_NS) {
+                                // 双击：从图片矩形开始放大
+                                openPreview(imgEntries.get(absoluteIdx), computeDrawRectInGrid(idxInPage));
+                                lastClickIndex = -1;
+                                return true;
+                            } else {
+                                selectedImgIndex = idxInPage;
+                                lastClickIndex = absoluteIdx;
+                                lastClickAtNs = now;
+                                return true;
+                            }
+                        }
+                    } else if (page == Page.FRAMES) { // FRAMES
+                        int absoluteIdx = pageIndex * itemsPerPage() + idxInPage;
+                        if (absoluteIdx < materials.size()) {
+                            selectedMaterial = idxInPage;
                             return true;
                         }
-                    }
-                } else { // FRAMES
-                    int absoluteIdx = pageIndex * itemsPerPage() + idxInPage;
-                    if (absoluteIdx < materials.size()) {
-                        selectedMaterial = idxInPage;
-                        return true;
                     }
                 }
             }
         }
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -576,7 +973,9 @@ public class NewPaintingEditorScreen extends Screen {
                                 PacketDistributor.sendToServer(new SetPaintingImagePayload(entityId, paintId));
                                 if (btnConfirm != null) btnConfirm.active = true;
                                 toast("完成！（已复用缓存）");
-                                this.onClose();
+                                this.editPreviewThumb = ClientPaintingImages.getCachedThumb(chosen);
+                                this.setPage(Page.FRAMES);
+//                                this.onClose();
                             });
                             return;
                         }
@@ -606,7 +1005,9 @@ public class NewPaintingEditorScreen extends Screen {
                         PacketDistributor.sendToServer(new SetPaintingImagePayload(entityId, paintId));
                         if (btnConfirm != null) btnConfirm.active = true;
                         toast("完成！");
-                        this.onClose();
+                        this.editPreviewThumb = ClientPaintingImages.getCachedThumb(chosen);
+                        this.setPage(Page.FRAMES);
+//                        this.onClose();
                     });
 
                 } catch (Throwable ex) {
@@ -617,8 +1018,8 @@ public class NewPaintingEditorScreen extends Screen {
                     });
                 }
             });
-            this.onClose();
-        } else { // FRAMES
+//            this.onClose();
+        } else if (page == Page.FRAMES) { // FRAMES
             if (selectedMaterial < 0) {
                 toast("请选择一个框架");
                 return;
@@ -643,6 +1044,26 @@ public class NewPaintingEditorScreen extends Screen {
                 PacketDistributor.sendToServer(new SetMaterialPayload(entityId, mat));
                 if (btnConfirm != null) btnConfirm.active = true;
                 toast("完成！");
+                this.setPage(Page.EDIT);
+//                this.onClose();
+            });
+        } else {
+            // 读取输入框最新值（确保同步）
+            editWidth  = parseIntOr(editWidth,  widthBox != null  ? widthBox.getValue()  : Integer.toString(editWidth));
+            editHeight = parseIntOr(editHeight, heightBox != null ? heightBox.getValue() : Integer.toString(editHeight));
+            editWidth  = clampSize(editWidth);
+            editHeight = clampSize(editHeight);
+
+            if (editWidth <= 0 || editHeight <= 0) {
+                toast("宽高必须为正整数");
+                return;
+            }
+
+            if (btnConfirm != null) btnConfirm.active = false;
+            minecraft.execute(() -> {
+                PacketDistributor.sendToServer(new SetPaintingSizePayload(entityId, editWidth, editHeight));
+                if (btnConfirm != null) btnConfirm.active = true;
+                toast("尺寸已应用：" + editWidth + "×" + editHeight);
                 this.onClose();
             });
         }
