@@ -80,12 +80,45 @@ public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRend
         int light = LevelRenderer.getLightColor(entity.level(), entity.blockPosition());
         PoseStack.Pose pose = stack.last();
         boolean hasFrame = !entity.getFrame().getPath().equals("none");
-        int widthPixels = entity.getPaintingWidth() * 16;
+        int widthPixels  = entity.getPaintingWidth()  * 16;
         int heightPixels = entity.getPaintingHeight() * 16;
-        boolean glowing = entity.isGlowing();
+        boolean glowing  = entity.isGlowing();
 
-        // 统一：画布主体使用不透明渲染与 canvas 几何
+        // 纹理（画）面的 buffer
         VertexConsumer vc = bufferSource.getBuffer(RenderType.entitySolid(this.getTextureLocation(entity)));
+
+        // —— 计算边距 —— //
+        float frameInset = hasFrame ? 1.0f : 0.0f; // 保持原有那 1px 的“防越界”UV inset
+        float geomMarginX = frameInset;
+        float geomMarginY = frameInset;
+        float uvInsetX    = frameInset;
+        float uvInsetY    = frameInset;
+
+        // TODO
+        if (!entity.isAutoFit()) {
+            // 保持原图宽高比（信箱/遮幅式）
+            ClientPaintingImages.ImageMeta meta = ClientPaintingImages.METAS.get(entity.getPaint());
+            if (meta != null && meta.pixelW > 0 && meta.pixelH > 0) {
+                float rTex = meta.pixelW / (float) meta.pixelH;
+                float rEnt = widthPixels / (float) heightPixels;
+
+                if (rTex > rEnt) {
+                    // 图更宽 → 以宽为基准，留上下边
+                    float contentH = widthPixels / rTex;
+                    float extraY = Math.max(0f, (heightPixels - contentH) / 2f);
+                    geomMarginY += extraY;
+                } else if (rTex < rEnt) {
+                    // 图更高 → 以高为基准，留左右边
+                    float contentW = heightPixels * rTex;
+                    float extraX = Math.max(0f, (widthPixels - contentW) / 2f);
+                    geomMarginX += extraX;
+                }
+                // 注意：UV 只保留 frameInset 的细微 inset，不随几何边距一起缩放，避免“裁切”图像
+            }
+            // 若没有 meta，退化为拉伸（即只用 frameInset）
+        }
+
+        // —— 画布（图像）——
         this.renderFaces(
                 "objects/canvas.obj",
                 pose,
@@ -93,10 +126,11 @@ public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRend
                 this.getLight(light, glowing),
                 (float) widthPixels,
                 (float) heightPixels,
-                hasFrame ? 1.0F : 0.0F
+                geomMarginX, geomMarginY,
+                uvInsetX, uvInsetY
         );
 
-        // 有相框则再绘制一圈
+        // —— 相框（尺寸不变）——
         if (hasFrame) {
             vc = bufferSource.getBuffer(RenderType.entityCutout(entity.getMaterial()));
             this.renderFrame(
@@ -110,13 +144,76 @@ public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRend
         }
     }
 
-    private void renderFaces(String name, PoseStack.Pose pose, VertexConsumer vertexConsumer, int light, float width, float height, float margin) {
+
+//    private void renderPainting(PoseStack stack, MultiBufferSource bufferSource, T entity) {
+//        int light = LevelRenderer.getLightColor(entity.level(), entity.blockPosition());
+//        PoseStack.Pose pose = stack.last();
+//        boolean hasFrame = !entity.getFrame().getPath().equals("none");
+//        int widthPixels = entity.getPaintingWidth() * 16;
+//        int heightPixels = entity.getPaintingHeight() * 16;
+//        boolean glowing = entity.isGlowing();
+//
+//        // 统一：画布主体使用不透明渲染与 canvas 几何
+//        VertexConsumer vc = bufferSource.getBuffer(RenderType.entitySolid(this.getTextureLocation(entity)));
+//        this.renderFaces(
+//                "objects/canvas.obj",
+//                pose,
+//                vc,
+//                this.getLight(light, glowing),
+//                (float) widthPixels,
+//                (float) heightPixels,
+//                hasFrame ? 1.0F : 0.0F
+//        );
+//
+//        // 有相框则再绘制一圈
+//        if (hasFrame) {
+//            vc = bufferSource.getBuffer(RenderType.entityCutout(entity.getMaterial()));
+//            this.renderFrame(
+//                    entity.getFrame(),
+//                    pose,
+//                    vc,
+//                    this.getFrameLight(light, glowing),
+//                    (float) widthPixels,
+//                    (float) heightPixels
+//            );
+//        }
+//    }
+
+//    private void renderFaces(String name, PoseStack.Pose pose, VertexConsumer vertexConsumer, int light, float width, float height, float margin) {
+//        for (Face f : BlenderObjectLoader.objects.get(Gallery.locate(name))) {
+//            for(FaceVertex v : f.vertices) {
+//                this.vertex(pose, vertexConsumer, v.v.x * (width - margin * 2.0F), v.v.y * (height - margin * 2.0F), v.v.z * 16.0F, v.t.u * (width - margin * 2.0F) / width + margin / width, (1.0F - v.t.v) * (height - margin * 2.0F) / height + margin / height, v.n.x, v.n.y, v.n.z, light);
+//            }
+//        }
+//    }
+    private void renderFaces(String name, PoseStack.Pose pose, VertexConsumer vc, int light, float width, float height, float margin) {
+        renderFaces(name, pose, vc, light, width, height, margin, margin, margin, margin);
+    }
+
+    private void renderFaces(String name, PoseStack.Pose pose, VertexConsumer vc, int light, float width, float height, float geomMarginX, float geomMarginY, float uvInsetX, float uvInsetY) {
+        float usedW = Math.max(1f, width  - geomMarginX * 2f);
+        float usedH = Math.max(1f, height - geomMarginY * 2f);
+
+        float uvInsetU = uvInsetX / width;   // 转成 0..1
+        float uvInsetV = uvInsetY / height;
+
+        float uvScaleU = 1f - uvInsetU * 2f; // 只为防越界的小 inset
+        float uvScaleV = 1f - uvInsetV * 2f;
+
         for (Face f : BlenderObjectLoader.objects.get(Gallery.locate(name))) {
-            for(FaceVertex v : f.vertices) {
-                this.vertex(pose, vertexConsumer, v.v.x * (width - margin * 2.0F), v.v.y * (height - margin * 2.0F), v.v.z * 16.0F, v.t.u * (width - margin * 2.0F) / width + margin / width, (1.0F - v.t.v) * (height - margin * 2.0F) / height + margin / height, v.n.x, v.n.y, v.n.z, light);
+            for (FaceVertex v : f.vertices) {
+                float px = v.v.x * usedW;
+                float py = v.v.y * usedH;
+                float pz = v.v.z * 16.0f;
+
+                float u = v.t.u * uvScaleU + uvInsetU;
+                float vtx = (1.0f - v.t.v) * uvScaleV + uvInsetV; // 原代码有 1-v
+
+                this.vertex(pose, vc, px, py, pz, u, vtx, v.n.x, v.n.y, v.n.z, light);
             }
         }
     }
+
 
     private List<Face> getFaces(ResourceLocation frame, String part) {
         String var10000 = frame.getNamespace();

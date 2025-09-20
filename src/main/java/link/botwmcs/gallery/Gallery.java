@@ -2,10 +2,7 @@ package link.botwmcs.gallery;
 
 
 import link.botwmcs.gallery.entity.PaintingEntity;
-import link.botwmcs.gallery.network.c2s.SetFramePayload;
-import link.botwmcs.gallery.network.c2s.SetMaterialPayload;
-import link.botwmcs.gallery.network.c2s.SetPaintingImagePayload;
-import link.botwmcs.gallery.network.c2s.SetPaintingSizePayload;
+import link.botwmcs.gallery.network.c2s.*;
 import link.botwmcs.gallery.registration.EntityRegister;
 import link.botwmcs.gallery.registration.ItemRegister;
 import link.botwmcs.gallery.registration.RegistryHelper;
@@ -125,6 +122,18 @@ public class Gallery {
                if (!(entity instanceof PaintingEntity pe)) return;
                pe.setPaintingHeight(payload.height());
                pe.setPaintingWidth(payload.width());
+           });
+        });
+
+        r.playToServer(SetPaintingAutoFitPayload.TYPE, SetPaintingAutoFitPayload.STREAM_CODEC, (payload, ctx) -> {
+           ctx.enqueueWork(() -> {
+               ServerPlayer serverPlayer = (ServerPlayer) ctx.player();
+               if (serverPlayer == null) return;
+
+               var level = serverPlayer.level();
+               var entity = level.getEntity(payload.entityId());
+               if (!(entity instanceof PaintingEntity pe)) return;
+               pe.setAutoFit(payload.autoFit());
            });
         });
     }

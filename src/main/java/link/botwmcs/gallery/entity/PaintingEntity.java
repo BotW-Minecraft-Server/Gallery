@@ -46,6 +46,7 @@ public class PaintingEntity extends HangingEntity {
     private static final EntityDataAccessor<ResourceLocation> MATERIAL = SynchedEntityData.defineId(PaintingEntity.class, EntityRegister.TRACKED_IDENTIFIER);
     private static final EntityDataAccessor<Integer> WIDTH = SynchedEntityData.defineId(PaintingEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> HEIGHT = SynchedEntityData.defineId(PaintingEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> AUTO_FIT = SynchedEntityData.defineId(PaintingEntity.class, EntityDataSerializers.BOOLEAN);
 
     // 地/顶放置时用于平面内旋转（度）
     private int rotation;
@@ -211,6 +212,7 @@ public class PaintingEntity extends HangingEntity {
         builder.define(MATERIAL, Gallery.locate("none"));
         builder.define(WIDTH, 1);
         builder.define(HEIGHT, 1);
+        builder.define(AUTO_FIT, true);
     }
 
     // ========= 网络 =========
@@ -244,6 +246,7 @@ public class PaintingEntity extends HangingEntity {
         tag.putInt("Rotation", this.rotation);
         tag.putInt("Width", getPaintingWidth());
         tag.putInt("Height", getPaintingHeight());
+        tag.putBoolean("AutoFit", isAutoFit());
     }
 
     @Override
@@ -258,6 +261,8 @@ public class PaintingEntity extends HangingEntity {
 
         this.setPaintingWidth(Math.max(1, tag.getInt("Width")));
         this.setPaintingHeight(Math.max(1, tag.getInt("Height")));
+
+        this.setAutoFit(tag.contains("AutoFit") ? tag.getBoolean("AutoFit") : true);
         this.recalculateBoundingBox();
 
     }
@@ -277,6 +282,13 @@ public class PaintingEntity extends HangingEntity {
 
     public int getPaintingHeight() { return this.getEntityData().get(HEIGHT); }
     public void setPaintingHeight(int h) { this.getEntityData().set(HEIGHT, Math.max(1, h)); }
+
+    public boolean isAutoFit() {
+        return this.getEntityData().get(AUTO_FIT);
+    }
+    public void setAutoFit(boolean value) {
+        this.getEntityData().set(AUTO_FIT, value);
+    }
 
 
 

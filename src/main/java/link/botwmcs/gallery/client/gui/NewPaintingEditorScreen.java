@@ -4,10 +4,7 @@ import link.botwmcs.fizzy.ImageServices;
 import link.botwmcs.fizzy.client.elements.FizzyButton;
 import link.botwmcs.fizzy.client.elements.StartButton;
 import link.botwmcs.gallery.Gallery;
-import link.botwmcs.gallery.network.c2s.SetFramePayload;
-import link.botwmcs.gallery.network.c2s.SetMaterialPayload;
-import link.botwmcs.gallery.network.c2s.SetPaintingImagePayload;
-import link.botwmcs.gallery.network.c2s.SetPaintingSizePayload;
+import link.botwmcs.gallery.network.c2s.*;
 import link.botwmcs.gallery.util.ClientPaintingImages;
 import link.botwmcs.gallery.util.FizzyImageSource;
 import link.botwmcs.gallery.util.FrameLoader;
@@ -72,11 +69,11 @@ public class NewPaintingEditorScreen extends Screen {
     private int editWidth  = 1;        // 默认值：你可改成服务器默认
     private int editHeight = 1;
     private boolean aspectLocked = true;
-    private boolean showRatioLocked = true;
+    private boolean autoFitLocked = true;
     private float aspectBase = 1f;      // 锁定时使用的基准 w/h
 
     private FizzyButton btnAspect;      // 比例锁开关
-    private FizzyButton btnShowRatio;   // 是否自动适配比例
+    private FizzyButton btnAutoFit;   // 是否自动适配比例
     private EditBox widthBox, heightBox; // 数值输入
     private FizzyButton wMinus, wPlus, hMinus, hPlus; // 快捷微调
     private boolean suppressEditEvents = false;
@@ -307,6 +304,7 @@ public class NewPaintingEditorScreen extends Screen {
         this.renderables.remove(hMinus);
         this.renderables.remove(hPlus);
         this.renderables.remove(btnAspect);
+        this.renderables.remove(btnAutoFit);
 
         var right = rightArea();
         int x = right.x;
@@ -353,11 +351,11 @@ public class NewPaintingEditorScreen extends Screen {
                 .pos(x, y + 46).size(118, 20).build();
         this.addRenderableWidget(btnAspect);
 
-        btnShowRatio = FizzyButton.builder(Component.literal(showRatioLocked ? "Auto Mode" : "Free Mode"),
-                b -> {
-                })
-                .pos(x, y + 46 + 118 + 6).size(118, 20).build();
-        this.addRenderableWidget(btnShowRatio);
+        // AutoFit
+        btnAutoFit = FizzyButton.builder(Component.literal(autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"),
+                b -> toggleAutoFitLock())
+                .pos(x + 118 + 6, y + 46).size(118, 20).build();
+        this.addRenderableWidget(btnAutoFit);
 
         // 比例快捷按钮：放到“下一行”，并按行宽自动换行
         int bw = 56, bh = 20, gap = 6;
@@ -393,6 +391,7 @@ public class NewPaintingEditorScreen extends Screen {
         if (hMinus != null)    { this.removeWidget(hMinus);    hMinus = null; }
         if (hPlus  != null)    { this.removeWidget(hPlus);     hPlus  = null; }
         if (btnAspect != null) { this.removeWidget(btnAspect); btnAspect = null; }
+        if (btnAutoFit != null) { this.removeWidget(btnAutoFit); btnAutoFit = null; }
         // 下面第 3 点里要新增的“比例快捷按钮”也记得在这里清掉（见下文 ratioButtons）
         if (ratioButtons != null) {
             for (var b : ratioButtons) this.removeWidget(b);
@@ -446,6 +445,13 @@ public class NewPaintingEditorScreen extends Screen {
         }
         if (btnAspect != null) {
             btnAspect.setMessage(Component.literal(aspectLocked ? "Lock Ratio" : "Free Ratio"));
+        }
+    }
+
+    private void toggleAutoFitLock() {
+        autoFitLocked = !autoFitLocked;
+        if (btnAutoFit != null) {
+            btnAutoFit.setMessage(Component.literal(autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"));
         }
     }
 
@@ -1062,6 +1068,7 @@ public class NewPaintingEditorScreen extends Screen {
             if (btnConfirm != null) btnConfirm.active = false;
             minecraft.execute(() -> {
                 PacketDistributor.sendToServer(new SetPaintingSizePayload(entityId, editWidth, editHeight));
+                PacketDistributor.sendToServer(new SetPaintingAutoFitPayload(entityId, autoFitLocked));
                 if (btnConfirm != null) btnConfirm.active = true;
                 toast("尺寸已应用：" + editWidth + "×" + editHeight);
                 this.onClose();
