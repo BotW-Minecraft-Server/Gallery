@@ -6,6 +6,7 @@ import link.botwmcs.fizzy.client.elements.StartButton;
 import link.botwmcs.fizzy.util.EasyImagesClient;
 import link.botwmcs.gallery.Gallery;
 import link.botwmcs.gallery.network.c2s.SetFramePayload;
+import link.botwmcs.gallery.network.c2s.SetMaterialPayload;
 import link.botwmcs.gallery.network.c2s.SetPaintingImagePayload;
 import link.botwmcs.gallery.util.ClientPaintingImages;
 import link.botwmcs.gallery.util.FizzyImageSource;
@@ -56,12 +57,16 @@ public class NewPaintingEditorScreen extends Screen {
     private int selectedImgIndex = -1;
 
     /* -------- 框架页数据 -------- */
-//    private List<ResourceLocation> frameList = new ArrayList<>(); // 唯一 frame id（去重）
+    private List<ResourceLocation> frameList = new ArrayList<>(); // 唯一 frame id（去重）
     private List<ResourceLocation> materials = new ArrayList<>(); // 所有 material id（去重）
-//    private Map<ResourceLocation, ResourceLocation> frame2GuiTex = new HashMap<>(); // frame -> 预览材质GUI纹理
     private Map<ResourceLocation, ResourceLocation> materialGui = new HashMap<>();
-//    private int selectedFrameIndex = -1;
     private int selectedMaterial = -1;
+    // 新增：双向映射
+    private final Map<ResourceLocation, List<ResourceLocation>> frameToMaterials = new HashMap<>();
+    private final Map<ResourceLocation, ResourceLocation> materialToFrame   = new HashMap<>();
+    private static final ResourceLocation FRAME_NONE   = Gallery.locate("objects/frame/none");   // = gallery:objects/frame/none
+    private static final ResourceLocation FRAME_SIMPLE = Gallery.locate("objects/frame/simple"); // = gallery:objects/frame/simple
+    private static final ResourceLocation MAT_NONE     = Gallery.locate("textures/block/frame/none/none.png");
 
     /* -------- 通用分页 -------- */
     private int pageIndex = 0;
@@ -177,16 +182,6 @@ public class NewPaintingEditorScreen extends Screen {
     }
 
     private List<Path> listImages(Path dir) throws Exception {
-//        if (!Files.isDirectory(dir)) return List.of();
-//        try (var s = Files.list(dir)) {
-//            return s.filter(p -> {
-//                        String n = p.getFileName().toString().toLowerCase(Locale.ROOT);
-//                        return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg")
-//                                || n.endsWith(".gif") || n.endsWith(".webp");
-//                    })
-//                    .sorted(Comparator.comparingLong((Path p) -> p.toFile().lastModified()).reversed())
-//                    .toList();
-//        }
         if (!Files.isDirectory(dir)) return List.of();
         try (var s = Files.list(dir)) {
             return s.filter(p -> {
@@ -221,6 +216,29 @@ public class NewPaintingEditorScreen extends Screen {
 
     /* ---------------- 框架（Frames页） ---------------- */
     private void refreshFrames() {
+        frameToMaterials.clear();
+        materialToFrame.clear();
+        materialGui.clear();
+
+        // 1) 由 FrameLoader 建立映射
+        for (var f : FrameLoader.frames.values()) {
+            ResourceLocation fr = f.frame();
+            ResourceLocation mat = f.material();
+            if (fr == null || mat == null) continue;
+
+            // frame -> materials
+            frameToMaterials.computeIfAbsent(fr, k -> new ArrayList<>()).add(mat);
+            // material -> frame
+            materialToFrame.put(mat, fr);
+        }
+        // 2) 兜底：如果上游未把 none/simple 完整注入，这里强制补全最基本关系
+        frameToMaterials.computeIfAbsent(FRAME_NONE, k -> new ArrayList<>());
+        if (!frameToMaterials.get(FRAME_NONE).contains(MAT_NONE)) {
+            frameToMaterials.get(FRAME_NONE).add(MAT_NONE);
+            materialToFrame.putIfAbsent(MAT_NONE, FRAME_NONE);
+        }
+        frameToMaterials.computeIfAbsent(FRAME_SIMPLE, k -> new ArrayList<>());
+
         // 取所有 frame id（去重、排序）
         materials = FrameLoader.frames.values().stream()
                 .map(FrameLoader.Frame::material)
@@ -228,10 +246,12 @@ public class NewPaintingEditorScreen extends Screen {
                 .distinct()
                 .sorted(ResourceLocation::compareTo)
                 .toList();
-        materialGui.clear();
+        frameList = FrameLoader.frames.values().stream()
+                .map(FrameLoader.Frame::frame)
+                .distinct()
+                .sorted(ResourceLocation::compareTo)
+                .toList();
 
-//        Gallery.LOGGER.info(materials.toString());
-//        Gallery.LOGGER.info(String.valueOf(FrameLoader.frames.size()));
         // 预览材质 GUI 纹理（取该 frame 的第一个 material）
         for (ResourceLocation mat : materials) {
             // 你的 JSON 给的是 block 贴图；GUI 用预览图，把 /block/ 映射到 /gui/
@@ -242,28 +262,11 @@ public class NewPaintingEditorScreen extends Screen {
             materialGui.put(mat, gui);
         }
 
-        page = Page.FRAMES;              // 当前页
-        pageIndex = 0; selectedMaterial = -1;
+        page = Page.FRAMES;
+        pageIndex = 0;
+        selectedMaterial = -1;
         updatePagination(materials.size());
-
-//        for (ResourceLocation frame : frameList) {
-//            ResourceLocation mat = getMaterialsForFrame(frame).getFirst(); // 至少一个
-//            ResourceLocation gui = ResourceLocation.fromNamespaceAndPath(
-//                    mat.getNamespace(), mat.getPath().replace("/block/", "/gui/")
-//            );
-//            frame2GuiTex.put(frame, gui);
-//        }
-//        updatePagination(frameList.size());
     }
-
-//    private List<ResourceLocation> getMaterialsForFrame(ResourceLocation frame) {
-//        return FrameLoader.frames.values().stream()
-//                .filter(v -> v.frame().equals(frame))
-//                .map(FrameLoader.Frame::material)
-//                .distinct()
-//                .sorted(ResourceLocation::compareTo)
-//                .toList();
-//    }
 
 
     /* ---------------- 分页/布局通用 ---------------- */
@@ -372,8 +375,6 @@ public class NewPaintingEditorScreen extends Screen {
             g.fill(x - 2, y - 2, x + cellW + 2, y + cellH + 2, 0x44000000);
 
             if (idx >= materials.size()) continue;
-//            ResourceLocation frame = frameList.get(idx);
-//            ResourceLocation guiTex = frame2GuiTex.get(frame);
             ResourceLocation mat = materials.get(idx);
             ResourceLocation guiTex = materialGui.getOrDefault(mat, mat);
 
@@ -389,52 +390,6 @@ public class NewPaintingEditorScreen extends Screen {
 
             if (i == selectedMaterial) g.renderOutline(ox - 2, oy - 2, drawW + 4, drawH + 4, 0xFFFFFFFF);
         }
-//        int total = (page == Page.UPLOADED) ? entries.size() : materials.size();
-//        // int start = pageIndex * itemsPerPage();
-//        for (int i = 0; i < right.rows * right.cols; i++) {
-//            int idx = start + i;
-//            if (idx >= total) break;
-//            int cx = i % cols, cy = i / cols;
-//            int x = rightX + cx * (cellW + GRID_GAP);
-//            int y = rightY + cy * (cellH + GRID_GAP);
-//
-//            g.fill(x - 2, y - 2, x + cellW + 2, y + cellH + 2, 0x44000000);
-//
-//            if (page == Page.UPLOADED) {
-//                // —— 原来的缩略图绘制（保持不变）——
-//                Path pth = entries.get(idx);
-//                var t = ClientPaintingImages.getCachedThumb(pth);
-//                if (t == null) { /* ...占位 ... */ }
-//                else {
-//                    int texW = t.width(), texH = t.height();
-//                    float s = Math.min(1f, Math.min((float) cellW / texW, (float) cellH / texH));
-//                    int drawW = Math.max(1, (int)(texW * s));
-//                    int drawH = Math.max(1, (int)(texH * s));
-//                    int ox = x + (cellW - drawW) / 2;
-//                    int oy = y + (cellH - drawH) / 2;
-//                    g.blit(t.rl(), ox, oy, drawW, drawH, 0, 0, texW, texH, texW, texH);
-//                }
-//                if (i == selectedIndex) g.renderOutline(x - 3, y - 3, cellW + 6, cellH + 6, 0xFFFFFFFF);
-//            } else {
-//                // —— Frames：按 material 画 GUI 贴图 ——
-//                ResourceLocation mat = materials.get(idx);
-//                ResourceLocation guiTex = materialGui.getOrDefault(mat, mat);
-//
-//                // 大多数 GUI 预览是 64x32；若你用 block 16x16 也没关系，等比即可
-//                final int TEX_W = 64, TEX_H = 32;   // 有 gui 贴图时
-//                // 若没有 gui 贴图而是方块贴图，可改为 16,16
-//
-//                // 按纹理宽高等比塞进 cell
-//                float s = Math.min((float)cellW / TEX_W, (float)cellH / TEX_H);
-//                int drawW = Math.max(1, Math.round(TEX_W * s));
-//                int drawH = Math.max(1, Math.round(TEX_H * s));
-//                int ox = x + (cellW - drawW) / 2;
-//                int oy = y + (cellH - drawH) / 2;
-//
-//                g.blit(guiTex, ox, oy, 0, 0, drawW, drawH, TEX_W, TEX_H);
-//                if (i == selectedMaterial) g.renderOutline(x - 3, y - 3, cellW + 6, cellH + 6, 0xFFFFFFFF);
-//            }
-//        }
 
     }
 
@@ -464,12 +419,7 @@ public class NewPaintingEditorScreen extends Screen {
             g.fill(0, 0, this.width, this.height, mask);
 
             // —— 6) 关键：blit 的参数顺序
-            // blit(ResourceLocation tex, int x, int y, int u, int v, int width, int height, int texWidth, int texHeight)
-            // width/height = 在屏幕上绘制的尺寸（我们用 drawW/drawH）
-            // texWidth/texHeight = 纹理本身的真实尺寸（我们用 texW/texH）
-
             g.blit(previewThumb.rl(), cx, cy, cw, ch, 0, 0, texW, texH, texW, texH);
-//            g.blit(previewThumb.rl(), cx, cy, 0, 0, cw, ch, texW, texH);
             g.renderOutline(cx - 2, cy - 2, cw + 4, ch + 4, 0xFFFFFFFF);
 
             g.pose().popPose();
@@ -482,31 +432,6 @@ public class NewPaintingEditorScreen extends Screen {
                     previewStart = previewEnd = null;
                 }
             }
-
-//        if (!(previewOpen && previewThumb != null && previewStart != null && previewEnd != null)) return;
-//
-//        long now = System.nanoTime();
-//        float t = (now - previewAnimStartNanos) / 1_000_000_000f;
-//        float raw = clamp01(t / PREVIEW_DURATION_SEC);
-//        float p = easeInOutCubic(previewClosing ? (1f - raw) : raw);
-//
-//        int texW = previewThumb.width();
-//        int texH = previewThumb.height();
-//        int cx = lerpI(previewStart.getX(), previewEnd.getX(), p);
-//        int cy = lerpI(previewStart.getY(), previewEnd.getY(), p);
-//        int cw = lerpI(previewStart.getWidth(),  previewEnd.getWidth(),  p);
-//        int ch = lerpI(previewStart.getHeight(), previewEnd.getHeight(), p);
-//
-//        int alpha = (int)(0xB0 * p) & 0xFF;
-//        g.fill(0, 0, this.width, this.height, (alpha << 24));
-//
-//        g.blit(previewThumb.rl(), cx, cy, cw, ch, 0, 0, texW, texH, texW, texH);
-//        g.renderOutline(cx - 2, cy - 2, cw + 4, ch + 4, 0xFFFFFFFF);
-//
-//        if (raw >= 1f && previewClosing) {
-//            previewOpen = false; previewClosing = false;
-//            previewPath = null; previewThumb = null; previewStart = previewEnd = null;
-//        }
         }
     }
 
@@ -700,27 +625,32 @@ public class NewPaintingEditorScreen extends Screen {
             }
             int abs = pageIndex * itemsPerPage() + selectedMaterial;
             if (abs >= materials.size()) return;
+
             ResourceLocation mat = materials.get(abs);
-            ResourceLocation guiTex = materialGui.getOrDefault(mat, mat);
+            ResourceLocation fr = materialToFrame.get(mat);
+            if (fr == null) {
+                if (mat.equals(MAT_NONE) || mat.getPath().endsWith("/none/none.png")) {
+                    fr = FRAME_NONE;
+                } else {
+                    fr = FRAME_SIMPLE;
+                }
+            }
             // 默认选择该 frame 的第一个材质
-            toast("Selected frame: " + mat + " / material: " + guiTex);
-            // TODO: 发送设置 frame/material 的 payload
-//            if (btnConfirm != null) btnConfirm.active = false;
-//            minecraft.execute(() -> {
-//                PacketDistributor.sendToServer(new SetFramePayload(entityId, mat));
-//                if (btnConfirm != null) btnConfirm.active = true;
-//                toast("完成！");
-//                this.onClose();
-//            });
+            if (btnConfirm != null) btnConfirm.active = false;
+            ResourceLocation finalFr = fr;
+            minecraft.execute(() -> {
+                PacketDistributor.sendToServer(new SetFramePayload(entityId, finalFr));
+                PacketDistributor.sendToServer(new SetMaterialPayload(entityId, mat));
+                if (btnConfirm != null) btnConfirm.active = true;
+                toast("完成！");
+                this.onClose();
+            });
         }
     }
 
     /* ---------------- Tools ---------------- */
 
     @Override public boolean isPauseScreen() { return false; }
-
-    private static final Pattern KEY_FROM_URL =
-            Pattern.compile("/i/([A-Za-z0-9_-]{4,})");
 
     private static String guessMimeType(String filename) {
         String lower = filename.toLowerCase(Locale.ROOT);
@@ -729,25 +659,6 @@ public class NewPaintingEditorScreen extends Screen {
         } else {
             return !lower.endsWith(".jpg") && !lower.endsWith(".jpeg") ? "application/octet-stream" : "image/jpeg";
         }
-    }
-
-    private static String toHex(byte[] b) {
-        StringBuilder sb = new StringBuilder(b.length * 2);
-        for (byte x : b) {
-            sb.append(Character.forDigit((x >>> 4) & 0xF, 16));
-            sb.append(Character.forDigit(x & 0xF, 16));
-        }
-        return sb.toString();
-    }
-
-    private void primeCacheWithSha256(String sha256, String ext, byte[] data) {
-        try {
-            Path dst = FizzyImageSource.cacheDir().resolve(sha256 + "." + ext.toLowerCase(Locale.ROOT));
-            Files.createDirectories(dst.getParent());
-            if (!Files.exists(dst)) {
-                Files.write(dst, data, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-            }
-        } catch (Exception ignore) {}
     }
 
     private static @Nullable String extractKeyFromEasyImagesUrl(String url) {

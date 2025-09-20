@@ -3,6 +3,7 @@ package link.botwmcs.gallery;
 
 import link.botwmcs.gallery.entity.PaintingEntity;
 import link.botwmcs.gallery.network.c2s.SetFramePayload;
+import link.botwmcs.gallery.network.c2s.SetMaterialPayload;
 import link.botwmcs.gallery.network.c2s.SetPaintingImagePayload;
 import link.botwmcs.gallery.registration.EntityRegister;
 import link.botwmcs.gallery.registration.ItemRegister;
@@ -98,6 +99,18 @@ public class Gallery {
                 var entity = level.getEntity(payload.entityId());
                 if (!(entity instanceof PaintingEntity pe)) return;
                 pe.setFrame(payload.frameId());
+            });
+        });
+
+        r.playToServer(SetMaterialPayload.TYPE, SetMaterialPayload.STREAM_CODEC, (payload, ctx) -> {
+            ctx.enqueueWork(() -> {
+                ServerPlayer serverPlayer = (ServerPlayer) ctx.player();
+                if (serverPlayer == null) return;
+
+                var level = serverPlayer.level();
+                var entity = level.getEntity(payload.entityId());
+                if (!(entity instanceof PaintingEntity pe)) return;
+                pe.setMaterial(payload.materialId());
             });
         });
     }
