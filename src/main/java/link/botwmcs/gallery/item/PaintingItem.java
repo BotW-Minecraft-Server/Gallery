@@ -2,7 +2,6 @@ package link.botwmcs.gallery.item;
 
 import link.botwmcs.gallery.entity.PaintingEntity;
 import link.botwmcs.gallery.registration.EntityRegister;
-import net.conczin.immersive_paintings.entity.ImmersivePaintingEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionResult;

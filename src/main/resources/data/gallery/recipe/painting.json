@@ -1,23 +1,17 @@
 {
   "type": "minecraft:crafting_shaped",
+  "category": "misc",
   "pattern": [
     "PPP",
     "PFP",
     "PPP"
   ],
   "key": {
-    "P": [
-      {
-        "item": "minecraft:paper"
-      }
-    ],
-    "F": [
-      {
-        "tag": "minecraft:item_frame"
-      }
-    ]
+    "P": { "item": "minecraft:paper" },
+    "F": { "item": "minecraft:item_frame" }
   },
   "result": {
-    "id": "gallery:painting"
+    "id": "gallery:painting",
+    "count": 1
   }
 }

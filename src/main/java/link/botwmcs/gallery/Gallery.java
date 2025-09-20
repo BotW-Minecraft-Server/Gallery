@@ -3,6 +3,7 @@ package link.botwmcs.gallery;
 
 import link.botwmcs.gallery.entity.PaintingEntity;
 import link.botwmcs.gallery.network.c2s.*;
+import link.botwmcs.gallery.network.s2c.*;
 import link.botwmcs.gallery.registration.EntityRegister;
 import link.botwmcs.gallery.registration.ItemRegister;
 import link.botwmcs.gallery.registration.RegistryHelper;
@@ -18,6 +19,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.*;
 import org.slf4j.Logger;
@@ -136,6 +139,25 @@ public class Gallery {
                pe.setAutoFit(payload.autoFit());
            });
         });
+
+        if (FMLEnvironment.dist == Dist.CLIENT) {
+            // 客户端：注册真实 handler（调用你的 ClientPlayHandlers）
+            r.playToClient(GetFramePayload.TYPE,              GetFramePayload.STREAM_CODEC,              ClientPlayHandlers::handleGetFrame);
+            r.playToClient(GetMaterialPayload.TYPE,           GetMaterialPayload.STREAM_CODEC,           ClientPlayHandlers::handleGetMaterial);
+            r.playToClient(GetPaintingAutoFitPayload.TYPE,    GetPaintingAutoFitPayload.STREAM_CODEC,    ClientPlayHandlers::handleGetPaintingAutoFit);
+            r.playToClient(GetPaintingImagePayload.TYPE,      GetPaintingImagePayload.STREAM_CODEC,      ClientPlayHandlers::handleGetPainting);
+            r.playToClient(GetPaintingSizePayload.TYPE,       GetPaintingSizePayload.STREAM_CODEC,       ClientPlayHandlers::handleGetPaintingSize);
+            r.playToClient(OpenPaintingScreenPayload.TYPE,    OpenPaintingScreenPayload.STREAM_CODEC,    ClientPlayHandlers::handleOpenPaintingScreen);
+        } else {
+            // 专服：只“声明信道存在”，handler 给 NO-OP（永远不会在服务端被调用）
+            r.playToClient(GetFramePayload.TYPE,              GetFramePayload.STREAM_CODEC,              (p, c) -> {});
+            r.playToClient(GetMaterialPayload.TYPE,           GetMaterialPayload.STREAM_CODEC,           (p, c) -> {});
+            r.playToClient(GetPaintingAutoFitPayload.TYPE,    GetPaintingAutoFitPayload.STREAM_CODEC,    (p, c) -> {});
+            r.playToClient(GetPaintingImagePayload.TYPE,      GetPaintingImagePayload.STREAM_CODEC,      (p, c) -> {});
+            r.playToClient(GetPaintingSizePayload.TYPE,       GetPaintingSizePayload.STREAM_CODEC,       (p, c) -> {});
+            r.playToClient(OpenPaintingScreenPayload.TYPE,    OpenPaintingScreenPayload.STREAM_CODEC,    (p, c) -> {});
+        }
+
     }
 
     // You can use SubscribeEvent and let the Event Bus discover methods to call

@@ -1,0 +1,17 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_paper": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": { "items": [ { "items": [ "minecraft:paper" ] } ] }
+    },
+    "has_frame": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": { "items": [ { "items": [ "minecraft:item_frame" ] } ] }
+    }
+  },
+  "requirements": [ [ "has_paper", "has_frame" ] ],
+  "rewards": {
+    "recipes": [ "gallery:painting" ]
+  }
+}
