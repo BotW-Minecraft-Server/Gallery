@@ -144,48 +144,6 @@ public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRend
         }
     }
 
-
-//    private void renderPainting(PoseStack stack, MultiBufferSource bufferSource, T entity) {
-//        int light = LevelRenderer.getLightColor(entity.level(), entity.blockPosition());
-//        PoseStack.Pose pose = stack.last();
-//        boolean hasFrame = !entity.getFrame().getPath().equals("none");
-//        int widthPixels = entity.getPaintingWidth() * 16;
-//        int heightPixels = entity.getPaintingHeight() * 16;
-//        boolean glowing = entity.isGlowing();
-//
-//        // 统一：画布主体使用不透明渲染与 canvas 几何
-//        VertexConsumer vc = bufferSource.getBuffer(RenderType.entitySolid(this.getTextureLocation(entity)));
-//        this.renderFaces(
-//                "objects/canvas.obj",
-//                pose,
-//                vc,
-//                this.getLight(light, glowing),
-//                (float) widthPixels,
-//                (float) heightPixels,
-//                hasFrame ? 1.0F : 0.0F
-//        );
-//
-//        // 有相框则再绘制一圈
-//        if (hasFrame) {
-//            vc = bufferSource.getBuffer(RenderType.entityCutout(entity.getMaterial()));
-//            this.renderFrame(
-//                    entity.getFrame(),
-//                    pose,
-//                    vc,
-//                    this.getFrameLight(light, glowing),
-//                    (float) widthPixels,
-//                    (float) heightPixels
-//            );
-//        }
-//    }
-
-//    private void renderFaces(String name, PoseStack.Pose pose, VertexConsumer vertexConsumer, int light, float width, float height, float margin) {
-//        for (Face f : BlenderObjectLoader.objects.get(Gallery.locate(name))) {
-//            for(FaceVertex v : f.vertices) {
-//                this.vertex(pose, vertexConsumer, v.v.x * (width - margin * 2.0F), v.v.y * (height - margin * 2.0F), v.v.z * 16.0F, v.t.u * (width - margin * 2.0F) / width + margin / width, (1.0F - v.t.v) * (height - margin * 2.0F) / height + margin / height, v.n.x, v.n.y, v.n.z, light);
-//            }
-//        }
-//    }
     private void renderFaces(String name, PoseStack.Pose pose, VertexConsumer vc, int light, float width, float height, float margin) {
         renderFaces(name, pose, vc, light, width, height, margin, margin, margin, margin);
     }

@@ -1,8 +1,10 @@
 package link.botwmcs.gallery.entity;
 
 import link.botwmcs.gallery.Gallery;
+import link.botwmcs.gallery.item.PaintingItem;
 import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
 import link.botwmcs.gallery.registration.EntityRegister;
+import link.botwmcs.gallery.registration.ItemRegister;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -19,6 +21,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.decoration.HangingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
@@ -50,6 +53,8 @@ public class PaintingEntity extends HangingEntity {
 
     // 地/顶放置时用于平面内旋转（度）
     private int rotation;
+    private static final double CANVAS_THICKNESS = 0.0625D;               // 1/16 方块厚
+    private static final double FACE_OFFSET = 0.5D - CANVAS_THICKNESS/2;  // 0.46875，与渲染保持一致避免Z-fight
 
     public PaintingEntity(EntityType<? extends HangingEntity> type, Level level) {
         super(type, level);
@@ -90,20 +95,21 @@ public class PaintingEntity extends HangingEntity {
         return Vec3.atLowerCornerOf(this.pos);
     }
 
-
-
     @Override
     protected AABB calculateBoundingBox(BlockPos pos, Direction side) {
+        // 这三轴仍沿世界轴，数值只有 -1/0/1
         Vec3 front = Vec3.atLowerCornerOf(side.getNormal());
-        Vec3 up = side.getAxis().isVertical() ? new Vec3(0, 0, 1) : new Vec3(0, 1, 0);
+        Vec3 up    = side.getAxis().isVertical() ? new Vec3(0, 0, 1) : new Vec3(0, 1, 0);
         Vec3 cross = up.cross(front);
 
+        // 地/顶时允许在平面内按 rotation 旋转
         if (this.rotation != 0) {
-            float rad = (float) (this.rotation * Math.PI / 180.0);
-            up = up.yRot(rad);
+            float rad = (float)(this.rotation * Math.PI / 180.0);
+            up    = up.yRot(rad);
             cross = cross.yRot(rad);
         }
 
+        // 使偶数尺寸能落在方块网格中心
         double dx = offsetForPaintingSize(getPaintingWidth());
         double dy = offsetForPaintingSize(getPaintingHeight());
 
@@ -122,17 +128,67 @@ public class PaintingEntity extends HangingEntity {
             counter = side.getCounterClockWise();
         }
 
+        // 中心点：从锚点中心，沿法线拉出一点避免贴墙 z-fight，并在平面内按尺寸微调
         Vec3 center = Vec3.atCenterOf(pos)
-                .relative(side, -0.46875F)
+                .relative(side, -FACE_OFFSET)
                 .relative(counter, dx)
                 .relative(facing, dy);
 
-        Vec3 shift = up.scale(getPaintingHeight())
-                .add(cross.scale(getPaintingWidth()))
-                .add(front.scale(0.0625F));
+        // 三轴尺寸：宽/高/厚映射到世界坐标轴，务必取绝对值（不同朝向分量可能为负）
+        double w = getPaintingWidth();
+        double h = getPaintingHeight();
+        double d = CANVAS_THICKNESS;
 
-        return AABB.ofSize(center, shift.x(), shift.y(), shift.z());
+        Vec3 sizeVec = up.scale(h).add(cross.scale(w)).add(front.scale(d));
+        double sx = Math.abs(sizeVec.x);
+        double sy = Math.abs(sizeVec.y);
+        double sz = Math.abs(sizeVec.z);
+
+        return AABB.ofSize(center, sx, sy, sz);
     }
+
+
+//    @Override
+//    protected AABB calculateBoundingBox(BlockPos pos, Direction side) {
+//        Vec3 front = Vec3.atLowerCornerOf(side.getNormal());
+//        Vec3 up = side.getAxis().isVertical() ? new Vec3(0, 0, 1) : new Vec3(0, 1, 0);
+//        Vec3 cross = up.cross(front);
+//
+//        if (this.rotation != 0) {
+//            float rad = (float) (this.rotation * Math.PI / 180.0);
+//            up = up.yRot(rad);
+//            cross = cross.yRot(rad);
+//        }
+//
+//        double dx = offsetForPaintingSize(getPaintingWidth());
+//        double dy = offsetForPaintingSize(getPaintingHeight());
+//
+//        Direction facing;
+//        Direction counter;
+//        if (side.getAxis().isVertical()) {
+//            facing = Direction.fromYRot(this.rotation);
+//            if (side == Direction.UP) {
+//                facing = facing.getOpposite();
+//                counter = facing.getClockWise();
+//            } else {
+//                counter = facing.getCounterClockWise();
+//            }
+//        } else {
+//            facing = Direction.UP;
+//            counter = side.getCounterClockWise();
+//        }
+//
+//        Vec3 center = Vec3.atCenterOf(pos)
+//                .relative(side, -0.46875F)
+//                .relative(counter, dx)
+//                .relative(facing, dy);
+//
+//        Vec3 shift = up.scale(getPaintingHeight())
+//                .add(cross.scale(getPaintingWidth()))
+//                .add(front.scale(0.0625F));
+//
+//        return AABB.ofSize(center, shift.x(), shift.y(), shift.z());
+//    }
 
     private static double offsetForPaintingSize(int size) {
         return (size % 2 == 0) ? 0.5D : 0.0D;
@@ -151,7 +207,7 @@ public class PaintingEntity extends HangingEntity {
                 .noneMatch(e -> ((PaintingEntity) e).direction == this.direction);
     }
 
-    // ========= 交互：空壳 =========
+    // ========= 交互 =========
     @Override
     public InteractionResult interact(Player player, InteractionHand hand) {
         if (!(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
@@ -160,13 +216,34 @@ public class PaintingEntity extends HangingEntity {
         return InteractionResult.CONSUME;
     }
 
+    @Override
+    public boolean isPushable() {
+        return true; // 允许与玩家/实体发生推挤
+    }
 
+    @Override
+    public void move(MoverType type, Vec3 delta) {
+        // 关键：屏蔽任何试图推动画作本体的位移
+        // HangingEntity 的默认实现会在这里触发掉落，我们不调用 super 即可避免。
+        // （如果你想允许极小的“抖动”也没问题，但通常直接忽略最稳妥）
+    }
 
+    @Override
+    public boolean isPushedByFluid() {
+        // 防止水流也来推
+        return false;
+    }
+
+    @Override
+    public boolean isPickable() { return true; }
+
+    @Override
+    public boolean canBeCollidedWith() { return true; }
 
 
     // ========= 物品/音效 =========
     public Item getItem() {
-        return Items.PAINTING;
+        return ItemRegister.PAINTING_ITEM.get();
     }
 
     public boolean isGlowing() {
@@ -176,8 +253,6 @@ public class PaintingEntity extends HangingEntity {
     public ItemStack getPickResult() {
         return new ItemStack(this.getItem());
     }
-
-
 
     @Override
     public void playPlacementSound() {
@@ -218,18 +293,11 @@ public class PaintingEntity extends HangingEntity {
     // ========= 网络 =========
     @Override
     public Packet<ClientGamePacketListener> getAddEntityPacket(net.minecraft.server.level.ServerEntity tracker) {
-//        int packed = (this.rotation & 0xFF) << 4 | (byte) this.direction.get3DDataValue();
-//        return new ClientboundAddEntityPacket(this, packed, this.getPos());
         return new ClientboundAddEntityPacket(this, this.rotation << 4 | (byte)this.direction.get3DDataValue(), this.getPos());
     }
 
     @Override
     public void recreateFromPacket(ClientboundAddEntityPacket pkt) {
-//        super.recreateFromPacket(pkt);
-//        int data = pkt.getData();
-//        Direction dir = Direction.from3DDataValue(data & 15);
-//        int rot = (data >> 4) & 0xFF;
-//        this.setDirection(dir, rot);
         super.recreateFromPacket(pkt);
         int data = pkt.getData();
         this.setDirection(Direction.from3DDataValue(data & 15), data >> 4);
@@ -267,6 +335,14 @@ public class PaintingEntity extends HangingEntity {
 
     }
 
+    @Override
+    public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
+        super.onSyncedDataUpdated(key);
+        if (WIDTH.equals(key) || HEIGHT.equals(key)) {
+            this.recalculateBoundingBox();
+        }
+    }
+
     // ========= Getter / Setter =========
     public ResourceLocation getPaint() { return this.getEntityData().get(PAINT); }
     public void setPaint(ResourceLocation id) { this.getEntityData().set(PAINT, id); }
@@ -278,10 +354,16 @@ public class PaintingEntity extends HangingEntity {
     public void setMaterial(ResourceLocation id) { this.getEntityData().set(MATERIAL, id); }
 
     public int getPaintingWidth() { return this.getEntityData().get(WIDTH); }
-    public void setPaintingWidth(int w) { this.getEntityData().set(WIDTH, Math.max(1, w)); }
+    public void setPaintingWidth(int w) {
+        this.getEntityData().set(WIDTH, Math.max(1, w));
+        this.recalculateBoundingBox();
+    }
 
     public int getPaintingHeight() { return this.getEntityData().get(HEIGHT); }
-    public void setPaintingHeight(int h) { this.getEntityData().set(HEIGHT, Math.max(1, h)); }
+    public void setPaintingHeight(int h) {
+        this.getEntityData().set(HEIGHT, Math.max(1, h));
+        this.recalculateBoundingBox();
+    }
 
     public boolean isAutoFit() {
         return this.getEntityData().get(AUTO_FIT);
