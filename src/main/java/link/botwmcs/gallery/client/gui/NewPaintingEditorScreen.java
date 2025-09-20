@@ -4,7 +4,9 @@ import link.botwmcs.fizzy.ImageServices;
 import link.botwmcs.fizzy.client.elements.FizzyButton;
 import link.botwmcs.fizzy.client.elements.StartButton;
 import link.botwmcs.gallery.Gallery;
+import link.botwmcs.gallery.entity.PaintingEntity;
 import link.botwmcs.gallery.network.c2s.*;
+import link.botwmcs.gallery.network.s2c.ClientPlayHandlers;
 import link.botwmcs.gallery.util.ClientPaintingImages;
 import link.botwmcs.gallery.util.FizzyImageSource;
 import link.botwmcs.gallery.util.FrameLoader;
@@ -105,6 +107,35 @@ public class NewPaintingEditorScreen extends Screen {
     private int lastClickIndex = -1;
     private static final long DOUBLE_CLICK_NS = 250_000_000L; // 250ms
 
+    public NewPaintingEditorScreen(int entityId, ClientPlayHandlers.PaintingDTO dto, @Nullable PaintingEntity paintingEntity) {
+        this(entityId);
+        // 先把初始快照落地（不会触发 UI 还没建好的控件）
+        if (dto != null) {
+            // 直接写字段，避免触发 responder；等 init() 后再统一把值回填到控件
+            if (dto.width() != null && dto.width() > 0)  this.editWidth  = clampSize(dto.width());
+            if (dto.height() != null && dto.height() > 0) this.editHeight = clampSize(dto.height());
+            if (this.editHeight <= 0) this.editHeight = 1;
+            this.aspectBase = Math.max(0.0001f, this.editWidth / (float) this.editHeight);
+
+            if (dto.autoFit() != null) this.autoFitLocked = dto.autoFit();
+
+            if (dto.paint() != null) {
+                Path cached = resolveCachedFromImageRL(dto.paint());
+                if (cached != null) {
+                    this.editPreviewThumb = ClientPaintingImages.getCachedThumb(cached);
+                    if (this.editPreviewThumb == null) {
+                        // 预热一份，避免首次进入 EDIT 空白
+                        boolean wantAnim = cached.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".gif");
+                        ClientPaintingImages.ensureThumb(cached, THUMB_TEX, wantAnim)
+                                .thenAccept(t -> { if (this.minecraft != null) this.minecraft.execute(() -> this.editPreviewThumb = t); })
+                                .exceptionally(ex -> { link.botwmcs.gallery.Gallery.LOGGER.warn("[Gallery] warmup preview from dto failed", ex); return null; });
+                    }
+                }
+            }
+            // material/frame 会在进入 Frames 页时再根据列表做匹配，高亮见上面的 onPaintingSnapshotUpdated
+        }
+    }
+
     public NewPaintingEditorScreen(int entityId) {
         super(Component.empty());
         this.entityId = entityId;
@@ -129,6 +160,7 @@ public class NewPaintingEditorScreen extends Screen {
         // 左侧：Edit 页（暂未启用）
         btnEdit = FizzyButton.builder(Component.literal("Edit"), b -> setPage(Page.EDIT))
                 .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
+        y += 24;
 
         addRenderableWidget(btnUploaded);
         addRenderableWidget(btnFrames);
@@ -143,8 +175,9 @@ public class NewPaintingEditorScreen extends Screen {
                 .pos(right.x, barY).size(20, 20).build();
         btnNext = FizzyButton.builder(Component.literal(">"), b -> turnPage(+1))
                 .pos(right.x + barW - 20, barY).size(20, 20).build();
+        y += 96;
         btnConfirm = StartButton.builder(Component.literal("Confirm"), b -> onConfirm())
-                .pos(right.x + (barW - 100) / 2, barY).size(80, 20).build();
+                .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
 
         addRenderableWidget(btnPrev);
         addRenderableWidget(btnNext);
@@ -154,6 +187,14 @@ public class NewPaintingEditorScreen extends Screen {
         setPage(Page.UPLOADED);
         refreshUploaded();
         super.init();
+
+        // 若通过三参构造带来了初始尺寸/AutoFit，在控件创建完成后回填一次
+        if (this.page == Page.EDIT && (this.widthBox != null || this.heightBox != null)) {
+            this.syncBoxesBoth();
+            if (this.btnAutoFit != null) {
+                this.btnAutoFit.setMessage(Component.literal(this.autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"));
+            }
+        }
     }
 
     private void setPage(Page p) {
@@ -654,10 +695,6 @@ public class NewPaintingEditorScreen extends Screen {
                     0xFFFFFF);
         }
 
-//        var right = rightArea();
-//        String ps = (pageIndex + 1) + " / " + pageCount + (page == Page.UPLOADED ? ("  (" + imgEntries.size() + ")") : ("  (" + materials.size() + ")"));
-//        drawCentered(g, Component.literal(ps), right.x + (this.width - right.x - PADDING)/2, this.height - PADDING - 34, 0xFFFFFF);
-
         // 预览层（仅图片页）
         if (page == Page.UPLOADED) renderPreviewLayer(g);
     }
@@ -775,8 +812,15 @@ public class NewPaintingEditorScreen extends Screen {
             int iy = dy + (dh - ih)/2;
 
             g.fill(dx, dy, dx + dw, dy + dh, 0xFF222222); // 背底
-            g.blit(editPreviewThumb.rl(), ix, iy, iw, ih, 0, 0, texW, texH, texW, texH);
-            g.renderOutline(dx - 1, dy - 1, dw + 2, dh + 2, 0xFFFFFFFF);
+            if (autoFitLocked) {
+                g.blit(editPreviewThumb.rl(), dx, dy, dw, dh, 0, 0, texW, texH, texW, texH);
+                g.renderOutline(dx, dy, dw, dh, 0xFFFFFFFF);
+            } else {
+                g.blit(editPreviewThumb.rl(), ix, iy, iw, ih, 0, 0, texW, texH, texW, texH);
+                g.renderOutline(ix, iy, iw, ih, 0xFFFFFFFF);
+            }
+
+
         } else {
             // 无图像时的占位
             g.fill(dx, dy, dx + dw, dy + dh, 0xFF444444);
@@ -866,14 +910,6 @@ public class NewPaintingEditorScreen extends Screen {
         return new Rect2i(dx, dy, dw, dh);
     }
 
-    private Rect2i computeCellRect(int idxInPage) {
-        var right = rightArea();
-        int cx = idxInPage % right.cols, cy = idxInPage / right.cols;
-        int x = right.x + cx * (THUMB + GRID_GAP);
-        int y = right.y + cy * (THUMB + GRID_GAP);
-        return new Rect2i(x, y, THUMB, THUMB);
-    }
-
     /* ---------------- 输入 ---------------- */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -959,7 +995,7 @@ public class NewPaintingEditorScreen extends Screen {
 
             // 发送设置图片的 payload
             if (btnConfirm != null) btnConfirm.active = false;
-            toast("正在上传图片…");
+//            toast("正在上传图片…");
             POOL.submit(() -> {
                 try {
                     byte[] data = Files.readAllBytes(chosen);
@@ -1049,7 +1085,7 @@ public class NewPaintingEditorScreen extends Screen {
                 PacketDistributor.sendToServer(new SetFramePayload(entityId, finalFr));
                 PacketDistributor.sendToServer(new SetMaterialPayload(entityId, mat));
                 if (btnConfirm != null) btnConfirm.active = true;
-                toast("完成！");
+//                toast("完成！");
                 this.setPage(Page.EDIT);
 //                this.onClose();
             });
@@ -1070,15 +1106,79 @@ public class NewPaintingEditorScreen extends Screen {
                 PacketDistributor.sendToServer(new SetPaintingSizePayload(entityId, editWidth, editHeight));
                 PacketDistributor.sendToServer(new SetPaintingAutoFitPayload(entityId, autoFitLocked));
                 if (btnConfirm != null) btnConfirm.active = true;
-                toast("尺寸已应用：" + editWidth + "×" + editHeight);
+//                toast("尺寸已应用：" + editWidth + "×" + editHeight);
                 this.onClose();
             });
+        }
+    }
+
+    /* ---------------- 针对已有数据的实体的持续化 ---------------- */
+    public void onPaintingSnapshotUpdated(ClientPlayHandlers.PaintingDTO dto) {
+        // —— 尺寸（只在下发了值时更新）
+        boolean sizeChanged = false;
+        if (dto.width() != null && dto.width() > 0) {
+            this.editWidth = clampSize(dto.width());
+            sizeChanged = true;
+        }
+        if (dto.height() != null && dto.height() > 0) {
+            this.editHeight = clampSize(dto.height());
+            sizeChanged = true;
+        }
+        if (sizeChanged) {
+            // 更新锁定基准，避免后续微调时跳变
+            if (this.editHeight <= 0) this.editHeight = 1;
+            this.aspectBase = Math.max(0.0001f, this.editWidth / (float) this.editHeight);
+
+            // 若当前就在 EDIT 页，刷新输入框显示
+            if (this.page == Page.EDIT) {
+                this.syncBoxesBoth();
+            }
+        }
+
+        // —— AutoFit
+        if (dto.autoFit() != null) {
+            this.autoFitLocked = dto.autoFit();
+            if (this.btnAutoFit != null) {
+                this.btnAutoFit.setMessage(Component.literal(this.autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"));
+            }
+        }
+
+        // —— Frame/Material：如果 Frames 页已经加载过列表，尽量帮用户高亮当前材质
+        // （selectedMaterial 存的是“页内索引”，这里只做尽力匹配，不强行翻页）
+        if (dto.material() != null && this.page == Page.FRAMES && !this.materials.isEmpty()) {
+            int abs = this.materials.indexOf(dto.material());
+            if (abs >= 0) {
+                int per = itemsPerPage();
+                int wantPage = Math.max(0, abs / Math.max(1, per));
+                // 若你不想切页，就注释掉下一行
+                this.pageIndex = Math.min(wantPage, this.pageCount - 1);
+                int start = this.pageIndex * per;
+                this.selectedMaterial = abs - start; // 转换为页内索引
+            }
+        }
+
+        // —— 服务器图像（ResourceLocation）→ 尝试映射到本地缩略图（若存在）
+        if (dto.paint() != null) {
+            // 你的缩略图系统以“本地 Path”为主，这里只做‘尽力而为’：如果缓存系统有该 RL 对应的本地文件，就切预览
+            Path cached = resolveCachedFromImageRL(dto.paint());
+            if (cached != null) {
+                setEditPreviewImage(cached);
+            }
+        }
+
+        // 轻量刷新：当前页为 EDIT 时重算右侧预览框；其他页不动
+        if (this.minecraft != null && this.page == Page.EDIT) {
+            // 让下一帧用到新的尺寸/预览
         }
     }
 
     /* ---------------- Tools ---------------- */
 
     @Override public boolean isPauseScreen() { return false; }
+
+    public int getEntityId() {
+        return this.entityId;
+    }
 
     private static String guessMimeType(String filename) {
         String lower = filename.toLowerCase(Locale.ROOT);
@@ -1087,6 +1187,28 @@ public class NewPaintingEditorScreen extends Screen {
         } else {
             return !lower.endsWith(".jpg") && !lower.endsWith(".jpeg") ? "application/octet-stream" : "image/jpeg";
         }
+    }
+
+    @Nullable private static Path resolveCachedFromImageRL(ResourceLocation rl) {
+        // 只认我们自己的命名空间与 img/ 前缀
+        if (!Objects.equals(rl.getNamespace(), Gallery.MODID)) return null;
+        String p = rl.getPath();                  // img/yyyy/MM/dd/<sha>-0.ext
+        if (p == null || !p.startsWith("img/")) return null;
+
+        String key = p.substring("img/".length());      // yyyy/MM/dd/<sha>-0.ext
+        int slash = key.lastIndexOf('/');
+        String file = slash >= 0 ? key.substring(slash + 1) : key; // <sha>-0.ext
+
+        int dash = file.indexOf('-');
+        int dot  = file.lastIndexOf('.');
+        if (dash < 0 || dot <= dash + 1) return null;
+
+        String sha = file.substring(0, dash);      // <sha>
+        String ext = file.substring(dot + 1);      // ext
+
+        Path cacheRoot = FizzyImageSource.cacheDir(); // 你已有的 cache 目录
+        Path candidate = cacheRoot.resolve(sha + "." + ext);
+        return Files.exists(candidate) ? candidate : null;
     }
 
     private static @Nullable String extractKeyFromEasyImagesUrl(String url) {

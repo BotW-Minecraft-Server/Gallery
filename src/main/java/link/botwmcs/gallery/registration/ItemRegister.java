@@ -23,7 +23,6 @@ public final class ItemRegister {
 
     public static void registerItems(RegistryHelper<Item> helper) {
         PAINTING_ITEM = helper.register(PAINTING_ITEM_ID, PaintingItem::new);
-        // TODO: Make glow painting item
         GLOW_PAINTING_ITEM = helper.register(PAINTING_ITEM_GLOW_ID, PaintingGlowItem::new);
     }
 

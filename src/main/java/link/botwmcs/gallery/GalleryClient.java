@@ -2,13 +2,15 @@ package link.botwmcs.gallery;
 
 import link.botwmcs.fizzy.ImageServices;
 import link.botwmcs.gallery.client.gui.NewPaintingEditorScreen;
-import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
+import link.botwmcs.gallery.entity.PaintingEntity;
+import link.botwmcs.gallery.network.s2c.*;
 import link.botwmcs.gallery.registration.RendererRegister;
 import link.botwmcs.gallery.util.BlenderObjectLoader;
 import link.botwmcs.gallery.util.FizzyImageSource;
 import link.botwmcs.gallery.util.FrameLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.packs.resources.ReloadableResourceManager;
+import net.minecraft.world.entity.Entity;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
@@ -19,6 +21,7 @@ import net.neoforged.fml.event.lifecycle.FMLConstructModEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 import java.util.Objects;
@@ -54,11 +57,18 @@ public class GalleryClient {
     @SubscribeEvent
     public static void registerPayloads(RegisterPayloadHandlersEvent e) {
         var r = e.registrar(Gallery.MODID);
-        r.playToClient(OpenPaintingScreenPayload.TYPE,
-                OpenPaintingScreenPayload.STREAM_CODEC,
-                (payload, ctx) -> ctx.enqueueWork(() ->
-                        Minecraft.getInstance().setScreen(new NewPaintingEditorScreen(payload.entityId()))
-                ));
+//        r.playToClient(OpenPaintingScreenPayload.TYPE,
+//                OpenPaintingScreenPayload.STREAM_CODEC,
+//                (payload, ctx) -> ctx.enqueueWork(() ->
+//                        Minecraft.getInstance().setScreen(new NewPaintingEditorScreen(payload.entityId()))
+//                ));
+        r.playToClient(GetFramePayload.TYPE, GetFramePayload.STREAM_CODEC, ClientPlayHandlers::handleGetFrame);
+        r.playToClient(GetMaterialPayload.TYPE, GetMaterialPayload.STREAM_CODEC, ClientPlayHandlers::handleGetMaterial);
+        r.playToClient(GetPaintingAutoFitPayload.TYPE, GetPaintingAutoFitPayload.STREAM_CODEC, ClientPlayHandlers::handleGetPaintingAutoFit);
+        r.playToClient(GetPaintingImagePayload.TYPE, GetPaintingImagePayload.STREAM_CODEC, ClientPlayHandlers::handleGetPainting);
+        r.playToClient(GetPaintingSizePayload.TYPE, GetPaintingSizePayload.STREAM_CODEC, ClientPlayHandlers::handleGetPaintingSize);
+        r.playToClient(OpenPaintingScreenPayload.TYPE, OpenPaintingScreenPayload.STREAM_CODEC, ClientPlayHandlers::handleOpenPaintingScreen);
+
     }
 
     @SubscribeEvent

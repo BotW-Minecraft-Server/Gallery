@@ -94,7 +94,6 @@ public class PaintingEntityRenderer<T extends PaintingEntity> extends EntityRend
         float uvInsetX    = frameInset;
         float uvInsetY    = frameInset;
 
-        // TODO
         if (!entity.isAutoFit()) {
             // 保持原图宽高比（信箱/遮幅式）
             ClientPaintingImages.ImageMeta meta = ClientPaintingImages.METAS.get(entity.getPaint());

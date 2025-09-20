@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PPP",
+    "PFP",
+    "PPP"
+  ],
+  "key": {
+    "P": [
+      {
+        "item": "minecraft:paper"
+      }
+    ],
+    "F": [
+      {
+        "tag": "minecraft:item_frame"
+      }
+    ]
+  },
+  "result": {
+    "id": "gallery:painting"
+  }
+}

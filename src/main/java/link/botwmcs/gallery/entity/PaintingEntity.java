@@ -2,7 +2,7 @@ package link.botwmcs.gallery.entity;
 
 import link.botwmcs.gallery.Gallery;
 import link.botwmcs.gallery.item.PaintingItem;
-import link.botwmcs.gallery.network.s2c.OpenPaintingScreenPayload;
+import link.botwmcs.gallery.network.s2c.*;
 import link.botwmcs.gallery.registration.EntityRegister;
 import link.botwmcs.gallery.registration.ItemRegister;
 import net.minecraft.core.BlockPos;
@@ -16,6 +16,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -212,6 +213,12 @@ public class PaintingEntity extends HangingEntity {
     public InteractionResult interact(Player player, InteractionHand hand) {
         if (!(player instanceof ServerPlayer sp)) return InteractionResult.PASS;
         if (sp.gameMode.getGameModeForPlayer() == GameType.ADVENTURE) return InteractionResult.PASS;
+        PacketDistributor.sendToPlayer(sp, new GetFramePayload(this.getId(), this.getFrame()));
+        PacketDistributor.sendToPlayer(sp, new GetMaterialPayload(this.getId(), this.getMaterial()));
+        PacketDistributor.sendToPlayer(sp, new GetPaintingAutoFitPayload(this.getId(), this.isAutoFit()));
+        PacketDistributor.sendToPlayer(sp, new GetPaintingSizePayload(this.getId(), this.getPaintingWidth(), this.getPaintingHeight()));
+        PacketDistributor.sendToPlayer(sp, new GetPaintingImagePayload(this.getId(), this.getPaint()));
+
         PacketDistributor.sendToPlayer(sp, new OpenPaintingScreenPayload(this.getId()));
         return InteractionResult.CONSUME;
     }
