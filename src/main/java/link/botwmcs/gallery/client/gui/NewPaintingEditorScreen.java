@@ -148,17 +148,17 @@ public class NewPaintingEditorScreen extends Screen {
         int y = PADDING + 12;
 
         // 左侧：上传页
-        btnUploaded = FizzyButton.builder(Component.literal("Uploaded Images"), b -> setPage(Page.UPLOADED))
+        btnUploaded = FizzyButton.builder(Component.translatable("gui.gallery.uploaded_images"), b -> setPage(Page.UPLOADED))
                 .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
         y += 24;
 
         // 左侧：Frames 页
-        btnFrames = FizzyButton.builder(Component.literal("Frames"), b -> setPage(Page.FRAMES))
+        btnFrames = FizzyButton.builder(Component.translatable("gui.gallery.frames"), b -> setPage(Page.FRAMES))
                 .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
         y += 24;
 
         // 左侧：Edit 页（暂未启用）
-        btnEdit = FizzyButton.builder(Component.literal("Edit"), b -> setPage(Page.EDIT))
+        btnEdit = FizzyButton.builder(Component.translatable("gui.gallery.edit"), b -> setPage(Page.EDIT))
                 .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
         y += 24;
 
@@ -176,7 +176,7 @@ public class NewPaintingEditorScreen extends Screen {
         btnNext = FizzyButton.builder(Component.literal(">"), b -> turnPage(+1))
                 .pos(right.x + barW - 20, barY).size(20, 20).build();
         y += 96;
-        btnConfirm = StartButton.builder(Component.literal("Confirm"), b -> onConfirm())
+        btnConfirm = StartButton.builder(Component.translatable("gui.gallery.confirm"), b -> onConfirm())
                 .pos(x, y).size(LEFT_W - PADDING * 2, 20).build();
 
         addRenderableWidget(btnPrev);
@@ -192,7 +192,7 @@ public class NewPaintingEditorScreen extends Screen {
         if (this.page == Page.EDIT && (this.widthBox != null || this.heightBox != null)) {
             this.syncBoxesBoth();
             if (this.btnAutoFit != null) {
-                this.btnAutoFit.setMessage(Component.literal(this.autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"));
+                this.btnAutoFit.setMessage(Component.translatable(this.autoFitLocked ? "gui.gallery.edit.auto_fit_on" : "gui.gallery.edit.auto_fit_off"));
             }
         }
     }
@@ -387,13 +387,13 @@ public class NewPaintingEditorScreen extends Screen {
         this.addRenderableWidget(hPlus);
 
         // 比例锁
-        btnAspect = FizzyButton.builder(Component.literal(aspectLocked ? "Lock Ratio" : "Free Ratio"),
+        btnAspect = FizzyButton.builder(Component.translatable(aspectLocked ? "gui.gallery.edit.lock_ratio" : "gui.gallery.edit.free_ratio"),
                         b -> toggleAspectLock())
                 .pos(x, y + 46).size(118, 20).build();
         this.addRenderableWidget(btnAspect);
 
         // AutoFit
-        btnAutoFit = FizzyButton.builder(Component.literal(autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"),
+        btnAutoFit = FizzyButton.builder(Component.translatable(autoFitLocked ? "gui.gallery.edit.auto_fit_on" : "gui.gallery.edit.auto_fit_off"),
                 b -> toggleAutoFitLock())
                 .pos(x + 118 + 6, y + 46).size(118, 20).build();
         this.addRenderableWidget(btnAutoFit);
@@ -464,7 +464,7 @@ public class NewPaintingEditorScreen extends Screen {
         // 启用锁定，并设置新的基准比例
         aspectLocked = true;
         aspectBase = Math.max(0.0001f, rw / (float) rh);
-        if (btnAspect != null) btnAspect.setMessage(Component.literal("Lock Ratio"));
+        if (btnAspect != null) btnAspect.setMessage(Component.translatable("gui.gallery.edit.lock_ratio"));
 
         // 以当前宽度推导高度（避免尺寸突然“跳宽跳高”）
         editHeight = Math.max(1, Math.round(editWidth / aspectBase));
@@ -485,14 +485,14 @@ public class NewPaintingEditorScreen extends Screen {
             aspectBase = Math.max(0.0001f, editWidth / (float) editHeight);
         }
         if (btnAspect != null) {
-            btnAspect.setMessage(Component.literal(aspectLocked ? "Lock Ratio" : "Free Ratio"));
+            btnAspect.setMessage(Component.translatable(aspectLocked ? "gui.gallery.edit.lock_ratio" : "gui.gallery.edit.free_ratio"));
         }
     }
 
     private void toggleAutoFitLock() {
         autoFitLocked = !autoFitLocked;
         if (btnAutoFit != null) {
-            btnAutoFit.setMessage(Component.literal(autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"));
+            btnAutoFit.setMessage(Component.translatable(autoFitLocked ? "gui.gallery.edit.auto_fit_on" : "gui.gallery.edit.auto_fit_off"));
         }
     }
 
@@ -674,7 +674,7 @@ public class NewPaintingEditorScreen extends Screen {
 
         // 左侧背景
         g.fill(PADDING/2, PADDING/2, LEFT_W - PADDING/2, this.height - PADDING/2, 0x66000000);
-        drawCentered(g, Component.literal("Gallery"), (LEFT_W)/2, 6, 0xFFFFFF);
+        drawCentered(g, Component.translatable("gui.gallery.title"), (LEFT_W)/2, 6, 0xFFFFFF);
 
         // 右侧网格
         switch (page) {
@@ -776,8 +776,8 @@ public class NewPaintingEditorScreen extends Screen {
 
         // 标题
 //        g.drawString(this.font, "Edit Size", x, y - 10, 0xFFFFFF, false);
-        g.drawString(this.font, "Width",  x, y + 6, 0xFFFFFF, false);
-        g.drawString(this.font, "Height", x + 120, y + 6, 0xFFFFFF, false);
+        g.drawString(this.font, Component.translatable("gui.gallery.edit.width").getString(),  x, y + 6, 0xFFFFFF, false);
+        g.drawString(this.font, Component.translatable("gui.gallery.edit.height").getString(), x + 120, y + 6, 0xFFFFFF, false);
 
         // 右侧给个大致预览框（按比例缩放）
         int controlsBottom = editControlsBottomY();
@@ -832,7 +832,7 @@ public class NewPaintingEditorScreen extends Screen {
 //        g.renderOutline(dx - 1, dy - 1, dw + 2, dh + 2, 0xFFFFFFFF);
 
         // 页脚显示当前数值和比例
-        String ps = editWidth + " x " + editHeight + "   (ratio " + String.format(java.util.Locale.US, "%.3f", editWidth/(float)editHeight) + ")";
+        String ps = editWidth + " x " + editHeight + "   (" + Component.translatable("gui.gallery.edit.ratio").getString() + " " + String.format(java.util.Locale.US, "%.3f", editWidth/(float)editHeight) + ")";
         g.drawString(this.font, ps, x, y - 6, 0xFFFFFF, false);
         // drawCentered(g, Component.literal(ps), x, y, 0xFFFFFF);
     }
@@ -985,7 +985,7 @@ public class NewPaintingEditorScreen extends Screen {
     private void onConfirm() {
         if (page == Page.UPLOADED) {
             if (selectedImgIndex < 0) {
-                toast("请选择一张图片");
+                toast(Component.translatable("gui.gallery.note.need_an_image").getString());
                 return;
             }
             int abs = pageIndex * itemsPerPage() + selectedImgIndex;
@@ -1014,7 +1014,7 @@ public class NewPaintingEditorScreen extends Screen {
                             minecraft.execute(() -> {
                                 PacketDistributor.sendToServer(new SetPaintingImagePayload(entityId, paintId));
                                 if (btnConfirm != null) btnConfirm.active = true;
-                                toast("完成！（已复用缓存）");
+                                toast(Component.translatable("gui.gallery.note.complete_cached").getString());
                                 this.editPreviewThumb = ClientPaintingImages.getCachedThumb(chosen);
                                 this.setPage(Page.FRAMES);
 //                                this.onClose();
@@ -1027,10 +1027,10 @@ public class NewPaintingEditorScreen extends Screen {
                     String uploadName = sha256 + "." + ext; // 稳定文件名
                     var r = ImageServices.IMAGES.uploadAsync(data, uploadName, guessMimeType(uploadName)).get();
                     if (r == null || !r.success || r.url == null || r.url.isBlank())
-                        throw new IOException("上传失败: http=" + (r == null ? -1 : r.httpCode) + " body=" + (r == null ? "null" : r.rawResponse));
+                        throw new IOException("Upload failed: http=" + (r == null ? -1 : r.httpCode) + " body=" + (r == null ? "null" : r.rawResponse));
 
                     String key = extractKeyFromEasyImagesUrl(r.url);           // yyyy/MM/dd/<sha>-0[_n].ext
-                    if (key == null || key.isBlank()) throw new IOException("无法解析返回URL: " + r.url);
+                    if (key == null || key.isBlank()) throw new IOException("Cannot resolve url: " + r.url);
 
                     // 预热内容缓存（以最终扩展名存一份；若已有就跳过）
                     String finalExt = FizzyImageSource.extFromFilename(key);
@@ -1046,7 +1046,7 @@ public class NewPaintingEditorScreen extends Screen {
                     minecraft.execute(() -> {
                         PacketDistributor.sendToServer(new SetPaintingImagePayload(entityId, paintId));
                         if (btnConfirm != null) btnConfirm.active = true;
-                        toast("完成！");
+                        toast(Component.translatable("gui.gallery.note.complete").getString());
                         this.editPreviewThumb = ClientPaintingImages.getCachedThumb(chosen);
                         this.setPage(Page.FRAMES);
 //                        this.onClose();
@@ -1056,14 +1056,14 @@ public class NewPaintingEditorScreen extends Screen {
                     Gallery.LOGGER.warn("[Gallery] upload image failed: {}", chosen, ex);
                     if (minecraft != null) minecraft.execute(() -> {
                         if (btnConfirm != null) btnConfirm.active = true;
-                        toast("上传失败：" + ex.getMessage());
+                        toast(Component.translatable("gui.gallery.note.failed").getString() + ex.getMessage());
                     });
                 }
             });
 //            this.onClose();
         } else if (page == Page.FRAMES) { // FRAMES
             if (selectedMaterial < 0) {
-                toast("请选择一个框架");
+                toast(Component.translatable("gui.gallery.note.need_a_frame").getString());
                 return;
             }
             int abs = pageIndex * itemsPerPage() + selectedMaterial;
@@ -1097,7 +1097,7 @@ public class NewPaintingEditorScreen extends Screen {
             editHeight = clampSize(editHeight);
 
             if (editWidth <= 0 || editHeight <= 0) {
-                toast("宽高必须为正整数");
+                toast(Component.translatable("gui.gallery.note.must_be_int").getString());
                 return;
             }
 
@@ -1139,7 +1139,7 @@ public class NewPaintingEditorScreen extends Screen {
         if (dto.autoFit() != null) {
             this.autoFitLocked = dto.autoFit();
             if (this.btnAutoFit != null) {
-                this.btnAutoFit.setMessage(Component.literal(this.autoFitLocked ? "Auto Fit: ON" : "Auto Fit: OFF"));
+                this.btnAutoFit.setMessage(Component.translatable(this.autoFitLocked ? "gui.gallery.edit.auto_fit_on" : "gui.gallery.edit.auto_fit_off"));
             }
         }
 
@@ -1278,10 +1278,10 @@ public class NewPaintingEditorScreen extends Screen {
             }
         }
         if (copied) {
-            toast("上传成功！");
+            toast(Component.translatable("gui.gallery.note.complete").getString());
             refreshUploaded();
         } else {
-            toast("没有找到可用的图片文件：只支持 PNG/JPG/GIF/WEBP");
+            toast(Component.translatable("gui.gallery.note.must_be_image").getString());
         }
     }
 
